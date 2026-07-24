@@ -3,7 +3,7 @@
 import { requirePermission, withTenant } from '@/lib/authz'
 import { prisma } from '@/lib/db/prisma'
 import { removeHolidayAction } from '@/modules/hr/actions'
-import { HolidayForm, LeaveTypeForm } from './policy-panels'
+import { HolidayForm, LeaveTypeForm, LeaveTypeRow } from './policy-panels'
 
 export default async function PolicyPage() {
   const session = await requirePermission('hr.view')
@@ -34,22 +34,41 @@ export default async function PolicyPage() {
           <p className="mt-0.5 text-xs text-slate-400">
             Quotas apply per calendar year; new types provision balances for all active employees.
           </p>
-          <table className="mt-3 w-full text-sm">
-            <thead className="text-left text-xs uppercase tracking-wide text-slate-400">
-              <tr><th className="py-1">Type</th><th>Annual quota</th><th>Carry forward</th><th>Employees covered</th></tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {data.leaveTypes.map((t) => (
-                <tr key={t.id}>
-                  <td className="py-1.5 font-medium text-slate-900">{t.name}</td>
-                  <td>{t.annualQuota} days</td>
-                  <td>{t.carryForward ? 'Yes' : 'No'}</td>
-                  <td className="text-slate-500">{t.balances.filter((b) => b.year === today.getFullYear()).length}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {canManage && <LeaveTypeForm />}
+          <div className="mt-3">
+            {canManage ? (
+              data.leaveTypes.map((t) => (
+                <LeaveTypeRow
+                  key={t.id}
+                  typeId={t.id}
+                  name={t.name}
+                  annualQuota={t.annualQuota}
+                  carryForward={t.carryForward}
+                  covered={t.balances.filter((b) => b.year === today.getFullYear()).length}
+                />
+              ))
+            ) : (
+              <table className="w-full text-sm">
+                <thead className="text-left text-xs uppercase tracking-wide text-slate-400">
+                  <tr><th className="py-1">Type</th><th>Quota</th><th>Carry fwd</th></tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {data.leaveTypes.map((t) => (
+                    <tr key={t.id}>
+                      <td className="py-1.5 font-medium text-slate-900">{t.name}</td>
+                      <td>{t.annualQuota} days</td>
+                      <td>{t.carryForward ? 'Yes' : 'No'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+          {canManage && (
+            <div className="mt-4 border-t border-slate-100 pt-3">
+              <p className="mb-1 text-xs font-medium text-slate-500">Add a new leave type</p>
+              <LeaveTypeForm />
+            </div>
+          )}
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-white p-5">

@@ -1,0 +1,40 @@
+{
+  "name": "zogency-agent",
+  "version": "1.0.0",
+  "description": "Zogency desktop monitoring agent — reports activity/idle time to your Zogency server (with employee consent).",
+  "author": "Zogency",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "npm run build && electron .",
+    "typecheck": "tsc --noEmit",
+    "dist": "npm run build && electron-builder --win --x64",
+    "dist:mac": "npm run build && electron-builder --mac",
+    "dist:linux": "npm run build && electron-builder --linux AppImage"
+  },
+  "build": {
+    "appId": "com.zogency.agent",
+    "productName": "Zogency Agent",
+    "directories": { "output": "release", "buildResources": "build" },
+    "files": ["dist/**/*", "renderer/**/*", "package.json"],
+    "win": { "target": ["nsis"] },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    },
+    "mac": { "target": ["dmg"], "category": "public.app-category.productivity" },
+    "linux": { "target": ["AppImage"], "category": "Utility" }
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8",
+    "typescript": "^5.6.0"
+  },
+  "optionalDependencies": {
+    "active-win": "^8.2.1"
+  }
+}

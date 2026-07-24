@@ -396,6 +396,23 @@ export async function saveLeaveTypeAction(_p: S, formData: FormData): Promise<S>
   return { success: `Leave policy "${name}" saved — balances provisioned for all active employees` }
 }
 
+export async function deleteLeaveTypeAction(formData: FormData) {
+  await requirePermission('hr.manage')
+  const typeId = uuid.parse(formData.get('typeId'))
+  await withTenant(async () => {
+    // History guard: block deletion if any leave was ever requested against it.
+    const inUse = await prisma.leaveRequest.count({ where: { typeId } })
+    if (inUse > 0) {
+      throw new Error('This leave type has request history and cannot be deleted — set its quota to 0 to retire it.')
+    }
+    await prisma.leaveBalance.deleteMany({ where: { typeId } })
+    const type = await prisma.leaveType.findUniqueOrThrow({ where: { id: typeId } })
+    await prisma.leaveType.delete({ where: { id: typeId } })
+    await audit('leave_type.deleted', 'leave_type', typeId, { name: type.name }, null)
+  })
+  revalidatePath('/hr/policy')
+}
+
 export async function addHolidayAction(_p: S, formData: FormData): Promise<S> {
   await requirePermission('hr.manage')
   const date = String(formData.get('date') ?? '')
