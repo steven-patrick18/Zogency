@@ -3,10 +3,12 @@
 import { useActionState } from 'react'
 import {
   addDiscoveryNoteAction,
+  addSowAction,
   createVersionAction,
   decideApprovalAction,
   markLostAction,
   recordContractAction,
+  removeSowAction,
   sendProposalAction,
   verbalCommitAction,
   type DealActionState,
@@ -208,6 +210,61 @@ export function ApprovalsPanel({ dealId, approvals, canApprove }: { dealId: stri
             )}
           </li>
         ))}
+      </ul>
+    </div>
+  )
+}
+
+type Sow = { id: string; serviceName: string; description: string; quantity: number; frequency: string; deadline: string | null; status: string }
+
+export function SowPanel({ dealId, deliverables, readOnly }: { dealId: string; deliverables: Sow[]; readOnly: boolean }) {
+  const [state, formAction, pending] = useActionState<DealActionState, FormData>(addSowAction, {})
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-5">
+      <h2 className="font-semibold text-slate-900">Scope of Work</h2>
+      <p className="mt-0.5 text-xs text-slate-400">
+        Every deliverable as a trackable line item (FR-5.3) — <span className="font-medium text-amber-600">required before Won</span>.
+      </p>
+      {!readOnly && (
+        <form action={formAction} className="mt-3 space-y-2">
+          <input type="hidden" name="dealId" value={dealId} />
+          <div className="grid grid-cols-2 gap-2">
+            <input name="serviceName" required placeholder="Service (e.g. Web Development) *" className={field} />
+            <input name="description" required placeholder="Deliverable description *" className={field} />
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <input name="quantity" type="number" min="1" defaultValue={1} className={field} title="Quantity" />
+            <select name="frequency" defaultValue="one_time" className={field}>
+              <option value="one_time">One-time</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+              <option value="quarterly">Quarterly</option>
+            </select>
+            <input name="deadline" type="date" className={field} />
+          </div>
+          <Feedback state={state} />
+          <button disabled={pending} className={primaryBtn}>{pending ? 'Adding…' : 'Add deliverable'}</button>
+        </form>
+      )}
+      <ul className="mt-4 space-y-2">
+        {deliverables.map((d) => (
+          <li key={d.id} className="flex items-start justify-between rounded-lg bg-slate-50 p-3 text-sm">
+            <div>
+              <p className="font-medium text-slate-900">{d.serviceName} <span className="font-normal text-slate-500">×{d.quantity} · {d.frequency.replace('_', '-')}</span></p>
+              <p className="text-slate-600">{d.description}</p>
+              <p className="text-xs text-slate-400">{d.deadline ? `Due ${d.deadline}` : 'No deadline'} · {d.status}</p>
+            </div>
+            {!readOnly && (
+              <form action={removeSowAction}>
+                <input type="hidden" name="dealId" value={dealId} />
+                <input type="hidden" name="deliverableId" value={d.id} />
+                <button className="text-xs text-red-500 hover:underline">Remove</button>
+              </form>
+            )}
+          </li>
+        ))}
+        {deliverables.length === 0 && <p className="text-sm text-slate-400">No deliverables yet — Won is blocked.</p>}
       </ul>
     </div>
   )

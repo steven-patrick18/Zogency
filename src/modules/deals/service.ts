@@ -7,6 +7,7 @@ import { audit } from '@/lib/audit'
 import { requireTenantContext } from '@/lib/db/context'
 import { prisma, scoped } from '@/lib/db/prisma'
 import { notify } from '@/lib/notify'
+import { executeHandoverChain } from '@/modules/handover/service'
 import { changeLeadStatus } from '@/modules/pipeline/service'
 
 export async function ensureDealForLead(leadId: string): Promise<Deal> {
@@ -195,6 +196,16 @@ export async function recordSignedContract(
   const finalValue = input.finalValue ?? (deal.value ? Number(deal.value) : null)
   if (!finalValue) return { ok: false, error: 'Set a final deal value (send a proposal or enter it here)' }
 
+  // SoW gate (FR-5.2/5.3, PRD risk R5): every deliverable must be a line item
+  // before the deal can be finalized as Won.
+  const sowCount = await prisma.sowDeliverable.count({ where: { dealId } })
+  if (sowCount === 0) {
+    return {
+      ok: false,
+      error: 'Add the Scope of Work first — Won is blocked until every deliverable is a line item (FR-5.2/5.3).',
+    }
+  }
+
   await prisma.contract.upsert({
     where: { dealId },
     update: { status: 'signed', signedAt: new Date(), evidenceNote: input.evidenceNote },
@@ -219,5 +230,36 @@ export async function recordSignedContract(
     )
   }
   await audit('deal.won', 'deal', dealId, { stage: deal.stage }, { stage: 'won', finalValue })
+  // FR-2.19–2.21, FR-5.x, FR-6.1: client, handover, checklist, project, invoice.
+  await executeHandoverChain(dealId)
   return { ok: true }
+}
+
+// ── SoW deliverables (FR-5.2/5.3) — editable until the deal closes ──────────
+
+export async function addSowDeliverable(
+  dealId: string,
+  input: { serviceName: string; description: string; quantity?: number; frequency?: string; deadline?: Date | null },
+): Promise<{ ok: boolean; error?: string }> {
+  const deal = await prisma.deal.findUniqueOrThrow({ where: { id: dealId } })
+  if (deal.stage === 'won' || deal.stage === 'lost') return { ok: false, error: 'Deal is closed' }
+  await prisma.sowDeliverable.create({
+    data: scoped({
+      dealId,
+      serviceName: input.serviceName,
+      description: input.description,
+      quantity: input.quantity ?? 1,
+      frequency: input.frequency ?? 'one_time',
+      deadline: input.deadline ?? null,
+    }),
+  })
+  await audit('deal.sow_added', 'deal', dealId, null, { serviceName: input.serviceName })
+  return { ok: true }
+}
+
+export async function removeSowDeliverable(dealId: string, deliverableId: string): Promise<void> {
+  const deal = await prisma.deal.findUniqueOrThrow({ where: { id: dealId } })
+  if (deal.stage === 'won' || deal.stage === 'lost') throw new Error('Deal is closed')
+  await prisma.sowDeliverable.delete({ where: { id: deliverableId, dealId } })
+  await audit('deal.sow_removed', 'deal', dealId, { deliverableId }, null)
 }

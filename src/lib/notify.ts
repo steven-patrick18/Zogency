@@ -33,6 +33,8 @@ export function renderNotification(templateKey: string, payload: Record<string, 
     'lead.sla_breach': (p) => `SLA breached: "${p.name}" has not been contacted within the SLA window.`,
     'approval.requested': (p) => `Approval needed: ${p.summary}`,
     'approval.decided': (p) => `Your approval request was ${p.decision}: ${p.summary}`,
+    'client.handover': (p) => `New client handover: ${p.client} (${p.deliverables} SoW deliverables) — project, checklist and draft invoice created.`,
+    'invoice.overdue': (p) => `Invoice ${p.number} for ${p.client} is overdue (₹${p.total}).`,
   }
   return templates[templateKey]?.(payload) ?? templateKey
 }

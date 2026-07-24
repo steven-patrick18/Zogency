@@ -8,6 +8,7 @@ import {
   DiscoveryPanel,
   ApprovalsPanel,
   ProposalPanel,
+  SowPanel,
 } from './panels'
 
 const STAGE_STYLES: Record<string, string> = {
@@ -32,6 +33,7 @@ export default async function DealRoomPage({ params }: { params: Promise<{ id: s
       },
     })
     if (!deal) return null
+    const sow = await prisma.sowDeliverable.findMany({ where: { dealId: id }, orderBy: { createdAt: 'asc' } })
     const [templates, approvals, users] = await Promise.all([
       prisma.proposalTemplate.findMany({ where: { active: true }, orderBy: { name: 'asc' } }),
       prisma.approvalRequest.findMany({
@@ -40,10 +42,10 @@ export default async function DealRoomPage({ params }: { params: Promise<{ id: s
       }),
       prisma.user.findMany({ select: { id: true, name: true } }),
     ])
-    return { deal, templates, approvals, users }
+    return { deal, sow, templates, approvals, users }
   })
   if (!data) notFound()
-  const { deal, templates, approvals, users } = data
+  const { deal, sow, templates, approvals, users } = data
   const userName = new Map(users.map((u) => [u.id, u.name]))
   const proposal = deal.proposals[0]
   const canApprove = session.user.permissions.includes('deals.approve_discount')
@@ -106,6 +108,19 @@ export default async function DealRoomPage({ params }: { params: Promise<{ id: s
           />
         </div>
         <div className="space-y-6">
+          <SowPanel
+            dealId={deal.id}
+            readOnly={deal.stage === 'won' || deal.stage === 'lost'}
+            deliverables={sow.map((d) => ({
+              id: d.id,
+              serviceName: d.serviceName,
+              description: d.description,
+              quantity: d.quantity,
+              frequency: d.frequency,
+              deadline: d.deadline ? d.deadline.toDateString() : null,
+              status: d.status,
+            }))}
+          />
           <ProposalPanel
             dealId={deal.id}
             templates={templates.map((t) => ({ id: t.id, name: t.name }))}

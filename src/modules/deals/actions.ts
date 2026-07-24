@@ -5,10 +5,12 @@ import { z } from 'zod'
 import { requirePermission, withTenant } from '@/lib/authz'
 import {
   addDiscoveryNote,
+  addSowDeliverable,
   createProposalVersion,
   decideApproval,
   markLost,
   recordSignedContract,
+  removeSowDeliverable,
   sendProposal,
   setVerbalCommit,
 } from './service'
@@ -116,6 +118,41 @@ export async function markLostAction(_p: DealActionState, formData: FormData): P
   }
   revalidatePath(`/deals/${dealId}`)
   return { success: 'Deal marked lost' }
+}
+
+const sowSchema = z.object({
+  dealId: z.string().uuid(),
+  serviceName: z.string().min(1, 'Service is required'),
+  description: z.string().min(1, 'Describe the deliverable'),
+  quantity: z.coerce.number().int().min(1).default(1),
+  frequency: z.enum(['one_time', 'weekly', 'monthly', 'quarterly']).default('one_time'),
+  deadline: z.string().optional().or(z.literal('')),
+})
+
+export async function addSowAction(_p: DealActionState, formData: FormData): Promise<DealActionState> {
+  await requirePermission('deals.edit')
+  const parsed = sowSchema.safeParse(Object.fromEntries(formData))
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' }
+  const d = parsed.data
+  const result = await withTenant(() =>
+    addSowDeliverable(d.dealId, {
+      serviceName: d.serviceName,
+      description: d.description,
+      quantity: d.quantity,
+      frequency: d.frequency,
+      deadline: d.deadline ? new Date(d.deadline) : null,
+    }),
+  )
+  revalidatePath(`/deals/${d.dealId}`)
+  return result.ok ? { success: 'Deliverable added' } : { error: result.error }
+}
+
+export async function removeSowAction(formData: FormData) {
+  await requirePermission('deals.edit')
+  const dealId = z.string().uuid().parse(formData.get('dealId'))
+  const deliverableId = z.string().uuid().parse(formData.get('deliverableId'))
+  await withTenant(() => removeSowDeliverable(dealId, deliverableId))
+  revalidatePath(`/deals/${dealId}`)
 }
 
 export async function recordContractAction(_p: DealActionState, formData: FormData): Promise<DealActionState> {
