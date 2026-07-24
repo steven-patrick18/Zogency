@@ -15,6 +15,7 @@ const PERMISSIONS: Array<[key: string, module: string, description: string]> = [
   ['leads.create', 'leads', 'Create leads manually'],
   ['leads.edit', 'leads', 'Edit lead fields'],
   ['leads.reassign', 'leads', 'Reassign lead ownership'],
+  ['leads.view_contact', 'leads', 'See unmasked lead phone/email by default'],
   ['leads.import', 'leads', 'CSV import'],
   ['pipeline.change_status', 'pipeline', 'Move leads between statuses'],
   ['calls.log', 'calls', 'Click-to-call and manual call logging'],
@@ -51,8 +52,9 @@ const ROLES: Record<string, string[] | 'ALL_BUT_VENDOR'> = {
   'Demo Admin': 'ALL_BUT_VENDOR',
   'Sales Manager': [
     'leads.view', 'leads.create', 'leads.edit', 'leads.reassign', 'leads.import',
+    'leads.view_contact',
     'pipeline.change_status', 'calls.log', 'deals.view', 'deals.edit',
-    'deals.approve_discount', 'clients.view', 'reports.view', 'approvals.act',
+    'deals.approve_discount', 'clients.view', 'reports.view', 'reports.exec', 'approvals.act',
   ],
   'Sales Rep': [
     'leads.view', 'leads.create', 'leads.edit', 'pipeline.change_status',

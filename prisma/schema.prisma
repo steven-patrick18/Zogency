@@ -91,6 +91,7 @@ model User {
   avatar       String?    // data-URI in dev; object-storage URL after the DO deploy
   setupToken   String?    @unique @map("setup_token") // one-time first-login link (provisioned installs)
   demoExpiresAt DateTime? @map("demo_expires_at") // disposable demo logins auto-disable after this
+  agentToken   String?    @unique @map("agent_token") // desktop monitoring agent auth
   status       UserStatus @default(active)
   lastLoginAt  DateTime?  @map("last_login_at")
   createdAt    DateTime   @default(now()) @map("created_at")
@@ -1461,6 +1462,20 @@ model UpsellOpportunity {
   @@map("upsell_opportunities")
 }
 
+// ── Desktop activity monitoring (Electron agent ingest) ─────────────────────
+// Requires signed employee consent (doc 11 risk note) — surfaced in the UI.
+model ActivityPing {
+  id       String   @id @default(uuid(7)) @db.Uuid
+  tenantId String   @map("tenant_id") @db.Uuid
+  userId   String   @map("user_id") @db.Uuid
+  at       DateTime @default(now())
+  appName  String?  @map("app_name")
+  idleSec  Int      @default(0) @map("idle_sec")
+
+  @@index([tenantId, userId, at])
+  @@map("activity_pings")
+}
+
 // ── Calls & SLA (Sprint 4 — FR-2.1–2.5) ────────────────────────────────────
 
 // Append-mostly: created at dial/log time, finalized once with outcome;
@@ -1478,6 +1493,7 @@ model Call {
   disposition     String?       // connected|no_answer|busy|wrong_number|callback_requested
   outcomeNote     String?       @map("outcome_note")
   recordingFileId String?       @map("recording_file_id") @db.Uuid
+  recordingUrl    String?       @map("recording_url") // provider recording URL (FR-2.3)
   isManualLog     Boolean       @default(false) @map("is_manual_log")
   createdAt       DateTime      @default(now()) @map("created_at")
 

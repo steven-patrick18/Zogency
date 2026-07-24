@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation'
 import { requirePermission, withTenant } from '@/lib/authz'
 import { prisma } from '@/lib/db/prisma'
-import { DocumentsPanel, JobDetailsForm } from './profile-panels'
+import { AgentTokenPanel, DocumentsPanel, JobDetailsForm } from './profile-panels'
 
 const STATUS_STYLES: Record<string, string> = {
   active: 'bg-green-100 text-green-700',
@@ -160,6 +160,7 @@ export default async function EmployeeProfilePage({ params }: { params: Promise<
 
         {/* RIGHT */}
         <div className="space-y-6">
+          {canManage && <AgentTokenPanel userId={user.id} hasToken={!!user.agentToken} />}
           <div className="rounded-xl border border-slate-200 bg-white p-5">
             <h2 className="font-semibold text-slate-900">Leave balances ({year})</h2>
             {employee.leaveBalances.length === 0 ? (

@@ -335,6 +335,30 @@ export async function deleteEmployeeDocAction(formData: FormData) {
   revalidatePath(`/hr/employees/${employeeId}`)
 }
 
+// Desktop monitoring agent token (issued per employee; requires signed consent).
+export async function issueAgentTokenAction(_p: S, formData: FormData): Promise<S> {
+  await requirePermission('hr.manage')
+  const userId = uuid.parse(formData.get('userId'))
+  const { randomBytes } = await import('node:crypto')
+  const token = `zga_${randomBytes(24).toString('hex')}`
+  await withTenant(async () => {
+    await prisma.user.update({ where: { id: userId }, data: { agentToken: token } })
+    await audit('agent.token_issued', 'user', userId, null, { issued: true })
+  })
+  revalidatePath('/hr/employees')
+  return { success: `Agent token issued — paste into the desktop agent: ${token}` }
+}
+
+export async function revokeAgentTokenAction(formData: FormData) {
+  await requirePermission('hr.manage')
+  const userId = uuid.parse(formData.get('userId'))
+  await withTenant(async () => {
+    await prisma.user.update({ where: { id: userId }, data: { agentToken: null } })
+    await audit('agent.token_revoked', 'user', userId, null, null)
+  })
+  revalidatePath('/hr/employees')
+}
+
 // ── Leave policy & company calendar (admin-managed) ─────────────────────────
 
 export async function saveLeaveTypeAction(_p: S, formData: FormData): Promise<S> {

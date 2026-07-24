@@ -96,6 +96,7 @@ export type TimelineEntry = {
   kind: 'status' | 'comment' | 'assignment' | 'call'
   actorId: string | null
   text: string
+  recordingUrl?: string
 }
 
 /** Single chronological timeline (FR-2.9): status changes + comments + assignments + calls. */
@@ -134,6 +135,7 @@ export async function getLeadTimeline(leadId: string): Promise<TimelineEntry[]> 
       kind: 'call' as const,
       actorId: c.userId,
       text: `${c.direction === 'inbound' ? 'Inbound' : 'Outbound'} call — ${c.disposition ?? 'logged'}${c.durationSec ? `, ${Math.round(c.durationSec / 60)} min` : ''}${c.outcomeNote ? `: ${c.outcomeNote}` : ''}${c.isManualLog ? ' (manual log)' : ''}`,
+      recordingUrl: c.recordingUrl ?? undefined,
     })),
   ]
   return entries.sort((a, b) => b.at.getTime() - a.at.getTime())

@@ -17,6 +17,7 @@ const NAV: Array<{ label: string; href?: string; sprint?: string }> = [
   { label: 'HR', href: '/hr' },
   { label: 'Invoices', href: '/invoices' },
   { label: 'Reports', href: '/reports' },
+  { label: 'Productivity', href: '/productivity' },
   { label: 'Settings', href: '/settings' },
 ]
 
@@ -52,8 +53,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       : NAV
 
   return (
-    <div className="flex min-h-screen bg-slate-100">
-      <aside className="flex w-56 flex-col border-r border-slate-200 bg-slate-950">
+    // Full-viewport shell: sidebar + topbar stay fixed, only <main> scrolls.
+    <div className="flex h-screen overflow-hidden bg-slate-100">
+      <aside className="flex w-56 shrink-0 flex-col border-r border-slate-200 bg-slate-950">
         <div className="border-b border-slate-800 px-5 py-4">
           <span className="text-lg font-bold text-white">Zogency</span>
         </div>
@@ -97,8 +99,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </div>
         </div>
       </aside>
-      <div className="flex flex-1 flex-col">
-        <header className="flex items-center justify-end border-b border-slate-200 bg-white px-6 py-2">
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="flex shrink-0 items-center justify-end border-b border-slate-200 bg-white px-6 py-2">
           <Link
             href="/notifications"
             className="relative rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100"
@@ -112,9 +114,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </Link>
         </header>
         {banner && (
-          <div className={`border-b px-6 py-2 text-sm ${banner.cls}`}>{banner.text}</div>
+          <div className={`shrink-0 border-b px-6 py-2 text-sm ${banner.cls}`}>{banner.text}</div>
         )}
-        <main className="flex-1 p-8">{children}</main>
+        <main className="flex-1 overflow-y-auto p-8">{children}</main>
       </div>
     </div>
   )

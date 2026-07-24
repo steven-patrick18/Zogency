@@ -3,10 +3,13 @@ import { requirePermission, withTenant } from '@/lib/authz'
 import { prisma } from '@/lib/db/prisma'
 import { getLeadTimeline } from '@/modules/pipeline/service'
 import { StatusChangeModal } from '@/modules/pipeline/status-modal'
-import { BantForm, LogCallForm, ReassignForm } from './panels'
+import { maskEmail, maskPhone } from '@/lib/mask'
+import { BantForm, ContactReveal, LogCallForm, ReassignForm } from './panels'
 
 export default async function LeadDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  await requirePermission('leads.view')
+  const session = await requirePermission('leads.view')
+  const canSeeContact = session.user.permissions.includes('leads.view_contact')
+  const canReveal = session.user.permissions.includes('calls.log')
   const { id } = await params
 
   const data = await withTenant(async () => {
@@ -55,8 +58,21 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
             </div>
           </div>
           <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
-            <div><dt className="text-slate-500">Phone</dt><dd className="font-medium text-slate-900">{lead.phone ?? '—'}</dd></div>
-            <div><dt className="text-slate-500">Email</dt><dd className="font-medium text-slate-900">{lead.email ?? '—'}</dd></div>
+            <div className="col-span-2">
+              <dt className="text-slate-500">Contact</dt>
+              <dd className="font-medium text-slate-900">
+                {canSeeContact ? (
+                  <span>{lead.phone ?? '—'} · {lead.email ?? '—'}</span>
+                ) : (
+                  <ContactReveal
+                    leadId={lead.id}
+                    maskedPhone={maskPhone(lead.phone)}
+                    maskedEmail={maskEmail(lead.email)}
+                    canReveal={canReveal}
+                  />
+                )}
+              </dd>
+            </div>
             <div><dt className="text-slate-500">City</dt><dd className="font-medium text-slate-900">{lead.city ?? '—'}</dd></div>
             <div><dt className="text-slate-500">Industry</dt><dd className="font-medium text-slate-900">{lead.industry ?? '—'}</dd></div>
             <div><dt className="text-slate-500">Source</dt><dd className="font-medium text-slate-900">{lead.source.name}{lead.source.isMql ? ' (MQL)' : ''}</dd></div>
@@ -95,6 +111,16 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
                 />
                 <div>
                   <p className="text-slate-800">{e.text}</p>
+                  {e.recordingUrl && (
+                    <a
+                      href={e.recordingUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-xs font-medium text-indigo-600 hover:underline"
+                    >
+                      ▶ Play recording
+                    </a>
+                  )}
                   <p className="text-xs text-slate-400">
                     {e.at.toLocaleString()} · {e.actorId ? (userName.get(e.actorId) ?? 'user') : 'system'}
                   </p>

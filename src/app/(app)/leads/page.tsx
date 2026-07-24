@@ -1,9 +1,11 @@
 import Link from 'next/link'
 import { requirePermission, withTenant } from '@/lib/authz'
 import { prisma } from '@/lib/db/prisma'
+import { maskEmail, maskPhone } from '@/lib/mask'
 
 export default async function LeadsPage() {
-  await requirePermission('leads.view')
+  const session = await requirePermission('leads.view')
+  const canSeeContact = session.user.permissions.includes('leads.view_contact')
   const leads = await withTenant(() =>
     prisma.lead.findMany({
       where: { archivedAt: null },
@@ -72,8 +74,10 @@ export default async function LeadsPage() {
                     {l.company && <p className="text-xs text-slate-500">{l.company}</p>}
                   </td>
                   <td className="px-4 py-3 text-slate-600">
-                    <p>{l.phone ?? '—'}</p>
-                    <p className="text-xs text-slate-400">{l.email ?? ''}</p>
+                    <p>{canSeeContact ? (l.phone ?? '—') : maskPhone(l.phone)}</p>
+                    <p className="text-xs text-slate-400">
+                      {canSeeContact ? (l.email ?? '') : maskEmail(l.email)}
+                    </p>
                   </td>
                   <td className="px-4 py-3 text-slate-600">{l.city ?? '—'}</td>
                   <td className="px-4 py-3 text-slate-600">
