@@ -258,6 +258,83 @@ export async function saveReviewAction(_p: S, formData: FormData): Promise<S> {
   return { success: 'Review saved' }
 }
 
+// ── Employee HRMS profile ───────────────────────────────────────────────────
+
+const employeeUpdateSchema = z.object({
+  employeeId: uuid,
+  designation: z.string().min(1),
+  departmentId: uuid.optional().or(z.literal('')),
+  managerId: uuid.optional().or(z.literal('')),
+  employmentType: z.enum(['permanent', 'contract', 'intern']),
+})
+
+export async function updateEmployeeAction(_p: S, formData: FormData): Promise<S> {
+  await requirePermission('hr.manage')
+  const parsed = employeeUpdateSchema.safeParse(Object.fromEntries(formData))
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' }
+  const { employeeId, designation, departmentId, managerId, employmentType } = parsed.data
+  await withTenant(async () => {
+    const before = await prisma.employee.findUniqueOrThrow({ where: { id: employeeId } })
+    await prisma.employee.update({
+      where: { id: employeeId },
+      data: {
+        designation,
+        departmentId: departmentId || null,
+        managerId: managerId || null,
+        employmentType,
+      },
+    })
+    await audit('employee.updated', 'employee', employeeId,
+      { designation: before.designation, departmentId: before.departmentId, managerId: before.managerId },
+      { designation, departmentId: departmentId || null, managerId: managerId || null })
+  })
+  revalidatePath(`/hr/employees/${employeeId}`)
+  revalidatePath('/hr/employees')
+  return { success: 'Employee details updated' }
+}
+
+const DOC_TYPES = new Set(['application/pdf', 'image/png', 'image/jpeg', 'image/webp'])
+const DOC_MAX = 2_000_000
+
+export async function uploadEmployeeDocAction(_p: S, formData: FormData): Promise<S> {
+  const session = await requirePermission('hr.manage')
+  const employeeId = uuid.parse(formData.get('employeeId'))
+  const title = String(formData.get('title') ?? '').trim()
+  const file = formData.get('file')
+  if (!title) return { error: 'Document title required (e.g. Aadhaar, Offer letter)' }
+  if (!(file instanceof File) || file.size === 0) return { error: 'Choose a file' }
+  if (!DOC_TYPES.has(file.type)) return { error: 'PDF, PNG, JPEG or WebP only' }
+  if (file.size > DOC_MAX) return { error: 'Max 2 MB per document (S3 storage lifts this later)' }
+
+  await withTenant(async () => {
+    await prisma.employee.findUniqueOrThrow({ where: { id: employeeId } })
+    const doc = await prisma.employeeDocument.create({
+      data: scoped({
+        employeeId,
+        title,
+        mime: file.type,
+        size: file.size,
+        dataUri: `data:${file.type};base64,${Buffer.from(await file.arrayBuffer()).toString('base64')}`,
+        uploadedBy: session.user.id,
+      }),
+    })
+    await audit('employee.doc_uploaded', 'employee', employeeId, null, { title, docId: doc.id, size: file.size })
+  })
+  revalidatePath(`/hr/employees/${employeeId}`)
+  return { success: 'Document uploaded' }
+}
+
+export async function deleteEmployeeDocAction(formData: FormData) {
+  await requirePermission('hr.manage')
+  const docId = uuid.parse(formData.get('docId'))
+  const employeeId = uuid.parse(formData.get('employeeId'))
+  await withTenant(async () => {
+    await prisma.employeeDocument.delete({ where: { id: docId } })
+    await audit('employee.doc_deleted', 'employee', employeeId, { docId }, null)
+  })
+  revalidatePath(`/hr/employees/${employeeId}`)
+}
+
 // ── Leave policy & company calendar (admin-managed) ─────────────────────────
 
 export async function saveLeaveTypeAction(_p: S, formData: FormData): Promise<S> {

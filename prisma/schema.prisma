@@ -90,6 +90,7 @@ model User {
   totpSecret   String?    @map("totp_secret")
   avatar       String?    // data-URI in dev; object-storage URL after the DO deploy
   setupToken   String?    @unique @map("setup_token") // one-time first-login link (provisioned installs)
+  demoExpiresAt DateTime? @map("demo_expires_at") // disposable demo logins auto-disable after this
   status       UserStatus @default(active)
   lastLoginAt  DateTime?  @map("last_login_at")
   createdAt    DateTime   @default(now()) @map("created_at")
@@ -1135,6 +1136,7 @@ model Employee {
   updatedAt       DateTime  @updatedAt @map("updated_at")
 
   onboardingItems EmployeeOnboardingItem[]
+  documents       EmployeeDocument[]
   exit            EmployeeExit?
   attendance      AttendanceRecord[]
   leaveBalances   LeaveBalance[]
@@ -1157,6 +1159,24 @@ model EmployeeOnboardingItem {
   employee Employee @relation(fields: [employeeId], references: [id])
 
   @@map("employee_onboarding_items")
+}
+
+// Employee documents (HRMS profile): ID proofs, contracts, certificates.
+// Data-URI storage now (like avatars); object storage when S3 connects.
+model EmployeeDocument {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  employeeId String   @map("employee_id") @db.Uuid
+  title      String
+  mime       String
+  size       Int
+  dataUri    String   @map("data_uri")
+  uploadedBy String?  @map("uploaded_by") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@map("employee_documents")
 }
 
 // Exit workflow (FR-4.7): notice, exit interview, asset recovery, access revoke.

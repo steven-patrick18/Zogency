@@ -46,9 +46,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   )
   const banner = LICENSE_BANNERS[license.state]
   const sidebarAvatar = me?.avatar ?? null
-  const nav = vendorModeEnabled()
-    ? [...NAV, { label: 'Vendor', href: '/vendor' }]
-    : NAV
+  const nav =
+    vendorModeEnabled() && session.user.permissions.includes('vendor.manage')
+      ? [...NAV, { label: 'Vendor', href: '/vendor' }]
+      : NAV
 
   return (
     <div className="flex min-h-screen bg-slate-100">

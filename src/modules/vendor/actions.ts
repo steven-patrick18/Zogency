@@ -31,7 +31,7 @@ export async function createClientInstallAction(
   _prev: VendorActionState,
   formData: FormData,
 ): Promise<VendorActionState> {
-  const session = await requirePermission('settings.manage')
+  const session = await requirePermission('vendor.manage')
   if (!vendorModeEnabled()) return { error: 'Vendor mode is not enabled on this server' }
   if (!issuerConfigured()) {
     return { error: 'ZOGENCY_LICENSE_PRIVATE_KEY is not set — add it to .env.production first' }
@@ -86,7 +86,7 @@ export async function publishReleaseAction(
   _prev: VendorActionState,
   formData: FormData,
 ): Promise<VendorActionState> {
-  const session = await requirePermission('settings.manage')
+  const session = await requirePermission('vendor.manage')
   if (!vendorModeEnabled()) return { error: 'Vendor mode is not enabled on this server' }
   const parsed = releaseSchema.safeParse({
     ref: String(formData.get('ref') ?? 'main').trim() || 'main',
@@ -114,7 +114,7 @@ export async function retryInstallAction(
   _prev: VendorActionState,
   formData: FormData,
 ): Promise<VendorActionState> {
-  const session = await requirePermission('settings.manage')
+  const session = await requirePermission('vendor.manage')
   const clientId = z.string().uuid().parse(formData.get('clientId'))
   const sshPassword = String(formData.get('sshPassword') ?? '').trim()
 

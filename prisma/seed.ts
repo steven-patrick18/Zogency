@@ -39,11 +39,16 @@ const PERMISSIONS: Array<[key: string, module: string, description: string]> = [
   ['automation.manage', 'automation', 'Edit automation rules'],
   ['settings.manage', 'settings', 'Tenant settings, statuses, departments, templates'],
   ['users.manage', 'users', 'Manage users and roles'],
+  ['vendor.manage', 'vendor', 'Vendor console: licenses, client installs, releases (owner only)'],
 ]
 
-// System roles → permission keys (doc 01 §3). Admin gets all.
-const ROLES: Record<string, string[] | 'ALL'> = {
-  Admin: 'ALL',
+// System roles → permission keys (doc 01 §3). Admin gets all EXCEPT the
+// vendor console — that needs the explicit Vendor Owner role (master server).
+// Demo Admin: full product access for prospect demos, no vendor, no user admin.
+const ROLES: Record<string, string[] | 'ALL_BUT_VENDOR'> = {
+  Admin: 'ALL_BUT_VENDOR',
+  'Vendor Owner': ['vendor.manage'],
+  'Demo Admin': 'ALL_BUT_VENDOR',
   'Sales Manager': [
     'leads.view', 'leads.create', 'leads.edit', 'leads.reassign', 'leads.import',
     'pipeline.change_status', 'calls.log', 'deals.view', 'deals.edit',
@@ -105,7 +110,15 @@ async function main() {
       update: {},
       create: { tenantId: tenant.id, name, isSystem: true },
     })
-    const wanted = permKeys === 'ALL' ? allPerms : allPerms.filter((p) => permKeys.includes(p.key))
+    const wanted =
+      permKeys === 'ALL_BUT_VENDOR'
+        ? allPerms.filter((p) => {
+            if (p.key === 'vendor.manage') return false
+            // Demo Admins must not manage real users or disable accounts.
+            if (name === 'Demo Admin' && p.key === 'users.manage') return false
+            return true
+          })
+        : allPerms.filter((p) => permKeys.includes(p.key))
     for (const p of wanted) {
       await prisma.rolePermission.upsert({
         where: { roleId_permissionId: { roleId: role.id, permissionId: p.id } },
@@ -152,6 +165,18 @@ async function main() {
     update: {},
     create: { userId: admin.id, roleId: adminRole.id },
   })
+
+  // Master server only: the seeded admin owns the vendor console.
+  if (process.env.ZOGENCY_VENDOR_MODE === '1') {
+    const vendorOwner = await prisma.role.findUniqueOrThrow({
+      where: { tenantId_name: { tenantId: tenant.id, name: 'Vendor Owner' } },
+    })
+    await prisma.userRole.upsert({
+      where: { userId_roleId: { userId: admin.id, roleId: vendorOwner.id } },
+      update: {},
+      create: { userId: admin.id, roleId: vendorOwner.id },
+    })
+  }
 
   // ── Sprint 2: lead statuses (the 7 PRD defaults), sources, assignment rule ──
   const LEAD_STATUSES: Array<[name: string, sort: number, flags?: { isTerminal?: boolean; isWon?: boolean; isJunk?: boolean }, color?: string]> = [

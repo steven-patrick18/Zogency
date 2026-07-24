@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { requirePermission, withTenant } from '@/lib/authz'
 import { prisma } from '@/lib/db/prisma'
 import { ExitPanel } from './employee-panels'
@@ -45,7 +46,11 @@ export default async function EmployeesPage() {
             const done = e.onboardingItems.filter((i) => i.doneAt).length
             return (
               <tr key={e.id} className="align-top">
-                <td className="px-4 py-3 font-medium text-slate-900">{userName.get(e.userId) ?? '—'}</td>
+                <td className="px-4 py-3 font-medium text-slate-900">
+                  <Link href={`/hr/employees/${e.id}`} className="hover:text-indigo-600 hover:underline">
+                    {userName.get(e.userId) ?? '—'}
+                  </Link>
+                </td>
                 <td className="px-4 py-3 text-slate-600">{e.designation}</td>
                 <td className="px-4 py-3 text-slate-600">
                   {e.departmentId ? (departmentName.get(e.departmentId) ?? '—') : '—'}

@@ -5,7 +5,8 @@ import { requirePermission, withTenant } from '@/lib/authz'
 import { prisma } from '@/lib/db/prisma'
 import { issuerConfigured } from '@/lib/license-issuer'
 import { vendorModeEnabled } from '@/modules/vendor/config'
-import { NewClientForm, PublishReleaseForm, RetryForm } from './vendor-panels'
+import { sweepExpiredDemoUsers } from '@/modules/vendor/demo-actions'
+import { DemoAccessCard, NewClientForm, PublishReleaseForm, RetryForm } from './vendor-panels'
 
 const STATUS_STYLES: Record<string, string> = {
   pending: 'bg-slate-200 text-slate-600',
@@ -16,13 +17,18 @@ const STATUS_STYLES: Record<string, string> = {
 
 export default async function VendorPage() {
   if (!vendorModeEnabled()) notFound()
-  await requirePermission('settings.manage')
-  const [clients, latestRelease] = await withTenant(() =>
-    Promise.all([
+  await requirePermission('vendor.manage')
+  const [clients, latestRelease, demoUsers] = await withTenant(async () => {
+    await sweepExpiredDemoUsers()
+    return Promise.all([
       prisma.vendorClient.findMany({ orderBy: { createdAt: 'desc' } }),
       prisma.vendorRelease.findFirst({ orderBy: { publishedAt: 'desc' } }),
-    ]),
-  )
+      prisma.user.findMany({
+        where: { demoExpiresAt: { not: null } },
+        orderBy: { createdAt: 'desc' },
+      }),
+    ])
+  })
 
   return (
     <div className="max-w-4xl">
@@ -57,6 +63,22 @@ export default async function VendorPage() {
           )}
         </div>
         <PublishReleaseForm />
+      </div>
+
+      <div className="mt-6 rounded-xl border border-slate-200 bg-white p-5">
+        <h2 className="font-semibold text-slate-900">Demo access</h2>
+        <p className="text-xs text-slate-500">
+          Disposable demo logins — full product access, no vendor console, auto-disabled at expiry.
+        </p>
+        <DemoAccessCard
+          demoUsers={demoUsers.map((u) => ({
+            id: u.id,
+            email: u.email,
+            name: u.name,
+            status: u.status,
+            expiresAt: u.demoExpiresAt?.toLocaleString() ?? '—',
+          }))}
+        />
       </div>
 
       <div className="mt-6">
