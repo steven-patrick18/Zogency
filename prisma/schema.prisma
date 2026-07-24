@@ -1022,6 +1022,289 @@ model ProjectClosure {
   @@map("project_closures")
 }
 
+// ── HR & Team Management (Phase 2 — FR-4.1–4.13, doc 06) ────────────────────
+
+// Manpower requisition (FR-4.1, SOP-HR MRF) — approval via approval_requests
+// (type=requisition).
+model JobRequisition {
+  id            String   @id @default(uuid(7)) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  departmentId  String   @map("department_id") @db.Uuid
+  roleTitle     String   @map("role_title")
+  headcount     Int      @default(1)
+  budgetRange   String?  @map("budget_range")
+  justification String
+  raisedBy      String   @map("raised_by") @db.Uuid
+  status        String   @default("open") // open|on_hold|filled|cancelled
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  candidates Candidate[]
+
+  @@map("job_requisitions")
+}
+
+model Candidate {
+  id              String   @id @default(uuid(7)) @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  requisitionId   String   @map("requisition_id") @db.Uuid
+  name            String
+  phone           String?
+  email           String?
+  currentStage    CandidateStage @default(applied) @map("current_stage")
+  rejectionReason String?  @map("rejection_reason")
+  noticePeriod    String?  @map("notice_period")
+  expectedCtc     String?  @map("expected_ctc")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  requisition  JobRequisition          @relation(fields: [requisitionId], references: [id])
+  stageHistory CandidateStageHistory[]
+  interviews   CandidateInterview[]
+  offer        Offer?
+
+  @@map("candidates")
+}
+
+// Append-only (FR-4.2).
+model CandidateStageHistory {
+  id          String         @id @default(uuid(7)) @db.Uuid
+  tenantId    String         @map("tenant_id") @db.Uuid
+  candidateId String         @map("candidate_id") @db.Uuid
+  from        CandidateStage?
+  to          CandidateStage
+  actorId     String?        @map("actor_id") @db.Uuid
+  at          DateTime       @default(now())
+
+  candidate Candidate @relation(fields: [candidateId], references: [id])
+
+  @@map("candidate_stage_history")
+}
+
+// One row per interviewer per round (FR-4.3; folds doc 03's interviews +
+// interview_feedback — calendar sync attaches with CalendarPort).
+model CandidateInterview {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
+  candidateId    String    @map("candidate_id") @db.Uuid
+  round          String    @default("technical") // technical|hr|assessment
+  scheduledAt    DateTime? @map("scheduled_at")
+  interviewerId  String    @map("interviewer_id") @db.Uuid
+  feedback       String?
+  recommendation String?   // hire|no_hire
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  candidate Candidate @relation(fields: [candidateId], references: [id])
+
+  @@map("candidate_interviews")
+}
+
+// Offer (FR-4.4) — compensation approval via approval_requests(type=compensation).
+model Offer {
+  id           String    @id @default(uuid(7)) @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+  candidateId  String    @unique @map("candidate_id") @db.Uuid
+  compensation String    // stored plainly for MVP; field-level encryption with KMS in P3
+  status       String    @default("draft") // draft|sent|accepted|declined
+  joiningOn    DateTime? @map("joining_on") @db.Date
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  candidate Candidate @relation(fields: [candidateId], references: [id])
+
+  @@map("offers")
+}
+
+// Employee spine (1:1 users). Created on hire (FR-4.6 Day-1 auto-link).
+model Employee {
+  id              String    @id @default(uuid(7)) @db.Uuid
+  tenantId        String    @map("tenant_id") @db.Uuid
+  userId          String    @unique @map("user_id") @db.Uuid
+  departmentId    String?   @map("department_id") @db.Uuid
+  managerId       String?   @map("manager_id") @db.Uuid // users.id of reporting manager
+  designation     String
+  employmentType  String    @default("permanent") @map("employment_type") // permanent|contract|intern
+  joinedOn        DateTime  @map("joined_on") @db.Date
+  probationEndsOn DateTime? @map("probation_ends_on") @db.Date
+  status          String    @default("active") // active|notice|exited
+  exitedOn        DateTime? @map("exited_on") @db.Date
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  onboardingItems EmployeeOnboardingItem[]
+  exit            EmployeeExit?
+  attendance      AttendanceRecord[]
+  leaveBalances   LeaveBalance[]
+  leaveRequests   LeaveRequest[]
+  goals           EmployeeGoal[]
+  reviews         PerformanceReview[]
+
+  @@map("employees")
+}
+
+// Onboarding checklist per hire (FR-4.5; includes BGV/joining-docs/IT items
+// per doc 11 Q15).
+model EmployeeOnboardingItem {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  employeeId String    @map("employee_id") @db.Uuid
+  title      String
+  doneAt     DateTime? @map("done_at")
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@map("employee_onboarding_items")
+}
+
+// Exit workflow (FR-4.7): notice, exit interview, asset recovery, access revoke.
+model EmployeeExit {
+  id                 String    @id @default(uuid(7)) @db.Uuid
+  tenantId           String    @map("tenant_id") @db.Uuid
+  employeeId         String    @unique @map("employee_id") @db.Uuid
+  type               String    // resignation|termination
+  noticeStartOn      DateTime  @map("notice_start_on") @db.Date
+  lastDayOn          DateTime  @map("last_day_on") @db.Date
+  exitInterviewNotes String?   @map("exit_interview_notes")
+  assetsRecovered    Boolean   @default(false) @map("assets_recovered")
+  accessRevokedAt    DateTime? @map("access_revoked_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@map("employee_exits")
+}
+
+// Append-only daily attendance (FR-4.8); corrections via new day rows only.
+model AttendanceRecord {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  employeeId String    @map("employee_id") @db.Uuid
+  date       DateTime  @db.Date
+  inAt       DateTime? @map("in_at")
+  outAt      DateTime? @map("out_at")
+  mode       String    @default("office") // office|wfh|leave|holiday
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@unique([tenantId, employeeId, date])
+  @@map("attendance_records")
+}
+
+model LeaveType {
+  id           String  @id @default(uuid(7)) @db.Uuid
+  tenantId     String  @map("tenant_id") @db.Uuid
+  name         String
+  annualQuota  Int     @map("annual_quota")
+  carryForward Boolean @default(false) @map("carry_forward")
+
+  balances LeaveBalance[]
+  requests LeaveRequest[]
+
+  @@unique([tenantId, name])
+  @@map("leave_types")
+}
+
+model LeaveBalance {
+  id         String @id @default(uuid(7)) @db.Uuid
+  tenantId   String @map("tenant_id") @db.Uuid
+  employeeId String @map("employee_id") @db.Uuid
+  typeId     String @map("type_id") @db.Uuid
+  year       Int
+  available  Int
+  used       Int    @default(0)
+
+  employee Employee  @relation(fields: [employeeId], references: [id])
+  type     LeaveType @relation(fields: [typeId], references: [id])
+
+  @@unique([tenantId, employeeId, typeId, year])
+  @@map("leave_balances")
+}
+
+// Leave request routed to the reporting manager (FR-4.9).
+model LeaveRequest {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  employeeId String    @map("employee_id") @db.Uuid
+  typeId     String    @map("type_id") @db.Uuid
+  fromOn     DateTime  @map("from_on") @db.Date
+  toOn       DateTime  @map("to_on") @db.Date
+  days       Int
+  reason     String
+  state      String    @default("pending") // pending|approved|rejected
+  decidedBy  String?   @map("decided_by") @db.Uuid
+  decidedAt  DateTime? @map("decided_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  employee Employee  @relation(fields: [employeeId], references: [id])
+  type     LeaveType @relation(fields: [typeId], references: [id])
+
+  @@map("leave_requests")
+}
+
+model Holiday {
+  id       String   @id @default(uuid(7)) @db.Uuid
+  tenantId String   @map("tenant_id") @db.Uuid
+  date     DateTime @db.Date
+  name     String
+
+  @@unique([tenantId, date])
+  @@map("holidays")
+}
+
+model PerformanceCycle {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  name        String
+  periodStart DateTime @map("period_start") @db.Date
+  periodEnd   DateTime @map("period_end") @db.Date
+  status      String   @default("open") // open|closed
+
+  goals   EmployeeGoal[]
+  reviews PerformanceReview[]
+
+  @@unique([tenantId, name])
+  @@map("performance_cycles")
+}
+
+// Goal/KPI per employee per cycle (FR-4.12).
+model EmployeeGoal {
+  id         String @id @default(uuid(7)) @db.Uuid
+  tenantId   String @map("tenant_id") @db.Uuid
+  employeeId String @map("employee_id") @db.Uuid
+  cycleId    String @map("cycle_id") @db.Uuid
+  title      String
+  kpi        String
+  target     String
+  weight     Int    @default(25)
+
+  employee Employee         @relation(fields: [employeeId], references: [id])
+  cycle    PerformanceCycle @relation(fields: [cycleId], references: [id])
+
+  @@map("employee_goals")
+}
+
+// Append-only review record (FR-4.13): self → manager → final rating.
+model PerformanceReview {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  employeeId     String   @map("employee_id") @db.Uuid
+  cycleId        String   @map("cycle_id") @db.Uuid
+  selfAssessment String?  @map("self_assessment")
+  managerReview  String?  @map("manager_review")
+  finalRating    Int?     @map("final_rating") // 1–5
+  reviewedBy     String?  @map("reviewed_by") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  employee Employee         @relation(fields: [employeeId], references: [id])
+  cycle    PerformanceCycle @relation(fields: [cycleId], references: [id])
+
+  @@unique([tenantId, employeeId, cycleId])
+  @@map("performance_reviews")
+}
+
 // ── Calls & SLA (Sprint 4 — FR-2.1–2.5) ────────────────────────────────────
 
 // Append-mostly: created at dial/log time, finalized once with outcome;
@@ -1147,6 +1430,15 @@ enum InvoiceStatus {
   partial
   paid
   overdue
+}
+
+enum CandidateStage {
+  applied
+  screening
+  interview
+  offer
+  hired
+  rejected
 }
 
 enum CampaignStatus {

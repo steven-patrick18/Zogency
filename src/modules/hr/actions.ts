@@ -1,0 +1,274 @@
+'use server'
+
+import { revalidatePath } from 'next/cache'
+import { z } from 'zod'
+import { audit } from '@/lib/audit'
+import { requirePermission, requireSession, withTenant } from '@/lib/authz'
+import { prisma, scoped } from '@/lib/db/prisma'
+import {
+  completeExit,
+  decideLeave,
+  hireCandidate,
+  moveCandidateStage,
+  punchAttendance,
+  requestLeave,
+  startExit,
+  type StageName,
+} from './service'
+
+export type HrActionState = { error?: string; success?: string }
+type S = HrActionState
+const uuid = z.string().uuid()
+
+export async function createRequisitionAction(_p: S, formData: FormData): Promise<S> {
+  const session = await requirePermission('hr.manage')
+  const departmentId = uuid.parse(formData.get('departmentId'))
+  const roleTitle = String(formData.get('roleTitle') ?? '').trim()
+  const justification = String(formData.get('justification') ?? '').trim()
+  const headcount = Number(formData.get('headcount') ?? 1)
+  if (!roleTitle || !justification) return { error: 'Role and justification are required (FR-4.1)' }
+  await withTenant(async () => {
+    const req = await prisma.jobRequisition.create({
+      data: scoped({
+        departmentId,
+        roleTitle,
+        headcount,
+        budgetRange: String(formData.get('budgetRange') ?? '') || null,
+        justification,
+        raisedBy: session.user.id,
+      }),
+    })
+    await audit('requisition.create', 'job_requisition', req.id, null, { roleTitle, headcount })
+  })
+  revalidatePath('/hr')
+  return { success: 'Requisition raised' }
+}
+
+export async function addCandidateAction(_p: S, formData: FormData): Promise<S> {
+  await requirePermission('hr.manage')
+  const requisitionId = uuid.parse(formData.get('requisitionId'))
+  const name = String(formData.get('name') ?? '').trim()
+  if (!name) return { error: 'Candidate name required' }
+  await withTenant(async () => {
+    await prisma.jobRequisition.findUniqueOrThrow({ where: { id: requisitionId } })
+    const candidate = await prisma.candidate.create({
+      data: scoped({
+        requisitionId,
+        name,
+        phone: String(formData.get('phone') ?? '') || null,
+        email: String(formData.get('email') ?? '') || null,
+        noticePeriod: String(formData.get('noticePeriod') ?? '') || null,
+        expectedCtc: String(formData.get('expectedCtc') ?? '') || null,
+      }),
+    })
+    await prisma.candidateStageHistory.create({
+      data: scoped({ candidateId: candidate.id, to: 'applied' }),
+    })
+  })
+  revalidatePath('/hr')
+  return { success: 'Candidate added' }
+}
+
+export async function moveCandidateAction(_p: S, formData: FormData): Promise<S> {
+  await requirePermission('hr.manage')
+  const candidateId = uuid.parse(formData.get('candidateId'))
+  const to = String(formData.get('to')) as StageName
+  const rejectionReason = String(formData.get('rejectionReason') ?? '') || undefined
+  const r = await withTenant(() => moveCandidateStage(candidateId, to, { rejectionReason }))
+  revalidatePath('/hr')
+  return r.ok ? { success: `Moved to ${to}` } : { error: r.error }
+}
+
+export async function addInterviewFeedbackAction(_p: S, formData: FormData): Promise<S> {
+  const session = await requirePermission('hr.manage')
+  const candidateId = uuid.parse(formData.get('candidateId'))
+  const feedback = String(formData.get('feedback') ?? '').trim()
+  const recommendation = z.enum(['hire', 'no_hire']).parse(formData.get('recommendation'))
+  if (!feedback) return { error: 'Feedback text required (FR-4.3)' }
+  await withTenant(async () => {
+    await prisma.candidate.findUniqueOrThrow({ where: { id: candidateId } })
+    await prisma.candidateInterview.create({
+      data: scoped({
+        candidateId,
+        round: String(formData.get('round') ?? 'technical'),
+        interviewerId: session.user.id,
+        feedback,
+        recommendation,
+      }),
+    })
+  })
+  revalidatePath('/hr')
+  return { success: 'Interview feedback recorded' }
+}
+
+export async function makeOfferAction(_p: S, formData: FormData): Promise<S> {
+  await requirePermission('hr.view_salaries')
+  const candidateId = uuid.parse(formData.get('candidateId'))
+  const compensation = String(formData.get('compensation') ?? '').trim()
+  const joiningOn = String(formData.get('joiningOn') ?? '')
+  if (!compensation) return { error: 'Compensation is required (FR-4.4)' }
+  await withTenant(async () => {
+    await prisma.offer.upsert({
+      where: { candidateId },
+      update: { compensation, status: 'sent', joiningOn: joiningOn ? new Date(joiningOn) : null },
+      create: scoped({
+        candidateId,
+        compensation,
+        status: 'sent',
+        joiningOn: joiningOn ? new Date(joiningOn) : null,
+      }),
+    })
+    await audit('offer.sent', 'candidate', candidateId, null, { joiningOn })
+  })
+  revalidatePath('/hr')
+  return { success: 'Offer sent' }
+}
+
+export async function offerStatusAction(_p: S, formData: FormData): Promise<S> {
+  await requirePermission('hr.manage')
+  const candidateId = uuid.parse(formData.get('candidateId'))
+  const status = z.enum(['accepted', 'declined']).parse(formData.get('status'))
+  await withTenant(() => prisma.offer.update({ where: { candidateId }, data: { status } }))
+  revalidatePath('/hr')
+  return { success: `Offer ${status}` }
+}
+
+const hireSchema = z.object({
+  candidateId: uuid,
+  departmentId: uuid,
+  managerId: uuid,
+  designation: z.string().min(1),
+  tempPassword: z.string().min(8, 'Temp password min 8 chars'),
+})
+
+export async function hireCandidateAction(_p: S, formData: FormData): Promise<S> {
+  await requirePermission('hr.manage')
+  const parsed = hireSchema.safeParse(Object.fromEntries(formData))
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Fill all hire fields' }
+  const { candidateId, ...input } = parsed.data
+  const r = await withTenant(() => hireCandidate(candidateId, input))
+  revalidatePath('/hr')
+  revalidatePath('/settings/users')
+  return r.ok ? { success: 'Hired — user account, onboarding checklist and leave balances created' } : { error: r.error }
+}
+
+export async function punchAction(_p: S, formData: FormData): Promise<S> {
+  const session = await requireSession()
+  const mode = z.enum(['office', 'wfh']).parse(formData.get('mode') ?? 'office')
+  const r = await withTenant(async () => {
+    const employee = await prisma.employee.findUnique({ where: { userId: session.user.id } })
+    if (!employee) return { ok: false as const, error: 'You have no employee record — ask HR to link one.' }
+    return punchAttendance(employee.id, mode)
+  })
+  revalidatePath('/hr')
+  return r.ok ? { success: r.action === 'in' ? 'Punched in' : 'Punched out' } : { error: r.error }
+}
+
+const leaveSchema = z.object({
+  typeId: uuid,
+  fromOn: z.string().min(1),
+  toOn: z.string().min(1),
+  reason: z.string().min(1, 'Reason required'),
+})
+
+export async function requestLeaveAction(_p: S, formData: FormData): Promise<S> {
+  const session = await requireSession()
+  const parsed = leaveSchema.safeParse(Object.fromEntries(formData))
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Fill all leave fields' }
+  const r = await withTenant(async () => {
+    const employee = await prisma.employee.findUnique({ where: { userId: session.user.id } })
+    if (!employee) return { ok: false as const, error: 'You have no employee record — ask HR to link one.' }
+    return requestLeave(employee.id, {
+      typeId: parsed.data.typeId,
+      fromOn: new Date(parsed.data.fromOn),
+      toOn: new Date(parsed.data.toOn),
+      reason: parsed.data.reason,
+    })
+  })
+  revalidatePath('/hr')
+  return r.ok ? { success: 'Leave requested — your manager has been notified' } : { error: r.error }
+}
+
+export async function decideLeaveAction(_p: S, formData: FormData): Promise<S> {
+  await requirePermission('hr.manage')
+  const requestId = uuid.parse(formData.get('requestId'))
+  const decision = z.enum(['approved', 'rejected']).parse(formData.get('decision'))
+  const r = await withTenant(() => decideLeave(requestId, decision))
+  revalidatePath('/hr')
+  return r.ok ? { success: `Leave ${decision}` } : { error: r.error }
+}
+
+const exitSchema = z.object({
+  employeeId: uuid,
+  type: z.enum(['resignation', 'termination']),
+  noticeStartOn: z.string().min(1),
+  lastDayOn: z.string().min(1),
+  notes: z.string().optional().or(z.literal('')),
+})
+
+export async function startExitAction(_p: S, formData: FormData): Promise<S> {
+  await requirePermission('hr.manage')
+  const parsed = exitSchema.safeParse(Object.fromEntries(formData))
+  if (!parsed.success) return { error: 'Fill exit type and dates (FR-4.7)' }
+  const { employeeId, type, noticeStartOn, lastDayOn, notes } = parsed.data
+  const r = await withTenant(() =>
+    startExit(employeeId, {
+      type,
+      noticeStartOn: new Date(noticeStartOn),
+      lastDayOn: new Date(lastDayOn),
+      notes: notes || undefined,
+    }),
+  )
+  revalidatePath('/hr')
+  return r.ok ? { success: 'Exit started — employee is on notice' } : { error: r.error }
+}
+
+export async function completeExitAction(_p: S, formData: FormData): Promise<S> {
+  await requirePermission('hr.manage')
+  const employeeId = uuid.parse(formData.get('employeeId'))
+  const r = await withTenant(() => completeExit(employeeId))
+  revalidatePath('/hr')
+  revalidatePath('/settings/users')
+  return r.ok ? { success: 'Exit completed — access revoked, assets recovered' } : { error: r.error }
+}
+
+export async function saveReviewAction(_p: S, formData: FormData): Promise<S> {
+  const session = await requirePermission('hr.manage')
+  const employeeId = uuid.parse(formData.get('employeeId'))
+  const cycleId = uuid.parse(formData.get('cycleId'))
+  const selfAssessment = String(formData.get('selfAssessment') ?? '') || null
+  const managerReview = String(formData.get('managerReview') ?? '') || null
+  const rating = Number(formData.get('finalRating') ?? 0)
+  await withTenant(async () => {
+    await prisma.performanceReview.upsert({
+      where: { tenantId_employeeId_cycleId: { tenantId: session.user.tenantId, employeeId, cycleId } },
+      update: { selfAssessment, managerReview, finalRating: rating || null, reviewedBy: session.user.id },
+      create: scoped({
+        employeeId,
+        cycleId,
+        selfAssessment,
+        managerReview,
+        finalRating: rating || null,
+        reviewedBy: session.user.id,
+      }),
+    })
+    await audit('review.saved', 'employee', employeeId, null, { cycleId, rating })
+  })
+  revalidatePath('/hr')
+  return { success: 'Review saved' }
+}
+
+export async function createCycleAction(_p: S, formData: FormData): Promise<S> {
+  await requirePermission('hr.manage')
+  const name = String(formData.get('name') ?? '').trim()
+  const periodStart = String(formData.get('periodStart') ?? '')
+  const periodEnd = String(formData.get('periodEnd') ?? '')
+  if (!name || !periodStart || !periodEnd) return { error: 'Name and period required (FR-4.12)' }
+  await withTenant(() =>
+    prisma.performanceCycle.create({
+      data: scoped({ name, periodStart: new Date(periodStart), periodEnd: new Date(periodEnd) }),
+    }),
+  )
+  revalidatePath('/hr')
+  return { success: 'Review cycle created' }
+}

@@ -246,6 +246,20 @@ async function main() {
     })
   }
 
+  // Leave types (FR-4.9/4.10) — Admin-editable in a later settings pass.
+  const LEAVE_TYPES: Array<[name: string, quota: number, carry: boolean]> = [
+    ['Casual Leave', 12, false],
+    ['Sick Leave', 8, false],
+    ['Earned Leave', 15, true],
+  ]
+  for (const [name, annualQuota, carryForward] of LEAVE_TYPES) {
+    await prisma.leaveType.upsert({
+      where: { tenantId_name: { tenantId: tenant.id, name } },
+      update: { annualQuota, carryForward },
+      create: { tenantId: tenant.id, name, annualQuota, carryForward },
+    })
+  }
+
   // Dev IVR webhook key (vendor pending — doc 11 Q1).
   await prisma.integrationCredential.upsert({
     where: { tenantId_provider: { tenantId: tenant.id, provider: 'ivr' } },

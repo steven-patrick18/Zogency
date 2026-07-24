@@ -61,6 +61,22 @@ export const TENANT_SCOPED_MODELS = new Set([
   'OptimizationLog',
   'CampaignReport',
   'ProjectClosure',
+  'JobRequisition',
+  'Candidate',
+  'CandidateStageHistory',
+  'CandidateInterview',
+  'Offer',
+  'Employee',
+  'EmployeeOnboardingItem',
+  'EmployeeExit',
+  'AttendanceRecord',
+  'LeaveType',
+  'LeaveBalance',
+  'LeaveRequest',
+  'Holiday',
+  'PerformanceCycle',
+  'EmployeeGoal',
+  'PerformanceReview',
 ])
 
 /** Platform-level models with no tenant_id — only reachable via prismaUnscoped. */

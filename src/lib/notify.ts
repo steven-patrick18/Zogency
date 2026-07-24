@@ -36,6 +36,9 @@ export function renderNotification(templateKey: string, payload: Record<string, 
     'client.handover': (p) => `New client handover: ${p.client} (${p.deliverables} SoW deliverables) — project, checklist and draft invoice created.`,
     'invoice.overdue': (p) => `Invoice ${p.number} for ${p.client} is overdue (₹${p.total}).`,
     'campaign.launched': (p) => `Campaign "${p.name}" is live — confirm the launch to the client (FR-3.15).`,
+    'hr.new_hire': (p) => `${p.name} joins your team as ${p.designation} — onboarding checklist created.`,
+    'hr.leave_requested': (p) => `${p.name} requested ${p.days} day(s) of leave — review in HR.`,
+    'hr.leave_decided': (p) => `Your leave request (${p.days} day(s)) was ${p.decision}.`,
   }
   return templates[templateKey]?.(payload) ?? templateKey
 }
