@@ -66,3 +66,12 @@ export const prisma = base.$extends({
 })
 
 export const prismaUnscoped = base
+
+/**
+ * Attaches the context tenantId to create data. The guard also injects it at
+ * runtime as a backstop, but the generated types require it — this keeps call
+ * sites type-safe without threading tenantId manually.
+ */
+export function scoped<T extends object>(data: T): T & { tenantId: string } {
+  return { ...data, tenantId: requireTenantContext().tenantId }
+}

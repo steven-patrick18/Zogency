@@ -71,6 +71,7 @@ model TenantSettings {
   slaHours             Int     @default(24) @map("sla_hours")
   revisionRoundDefault Int     @default(2) @map("revision_round_default")
   featureFlags         Json    @default("{}") @map("feature_flags")
+  licenseKey           String? @map("license_key")
   updatedAt            DateTime @updatedAt @map("updated_at")
 
   tenant Tenant @relation(fields: [tenantId], references: [id])

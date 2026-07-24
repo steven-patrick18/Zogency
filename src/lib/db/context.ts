@@ -10,7 +10,12 @@ export type TenantContext = {
   permissions?: string[]
 }
 
-const storage = new AsyncLocalStorage<TenantContext>()
+// Singleton on globalThis: Next.js dev (Turbopack/HMR) can instantiate this
+// module once per server chunk — separate ALS instances would make the guard
+// lose the context set by runWithTenant.
+const globalForALS = globalThis as unknown as { zgyTenantALS?: AsyncLocalStorage<TenantContext> }
+const storage = globalForALS.zgyTenantALS ?? new AsyncLocalStorage<TenantContext>()
+globalForALS.zgyTenantALS = storage
 
 export function runWithTenant<T>(ctx: TenantContext, fn: () => Promise<T> | T): Promise<T> | T {
   return storage.run(ctx, fn)

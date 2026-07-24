@@ -1,6 +1,8 @@
 import Link from 'next/link'
-import { requireSession } from '@/lib/authz'
+import { requireSession, withTenant } from '@/lib/authz'
+import { prisma } from '@/lib/db/prisma'
 import { logoutAction } from '@/modules/auth/actions'
+import { getWorkspaceLicense } from '@/modules/settings/service'
 
 // Module nav — items without an href ship in later sprints (doc 10).
 const NAV: Array<{ label: string; href?: string; sprint?: string }> = [
@@ -13,11 +15,33 @@ const NAV: Array<{ label: string; href?: string; sprint?: string }> = [
   { label: 'HR', sprint: 'P2' },
   { label: 'Invoices', sprint: 'S6' },
   { label: 'Reports', sprint: 'S6' },
-  { label: 'Settings', sprint: 'S1' },
+  { label: 'Settings', href: '/settings' },
 ]
+
+const LICENSE_BANNERS: Record<string, { text: string; cls: string }> = {
+  expiring: {
+    text: 'The workspace license expires soon — renew from Settings → License.',
+    cls: 'bg-amber-50 text-amber-800 border-amber-200',
+  },
+  grace: {
+    text: 'The workspace license has expired (grace period active) — install a new key in Settings → License.',
+    cls: 'bg-amber-50 text-amber-800 border-amber-200',
+  },
+  expired: {
+    text: 'License expired — the workspace is read-only until a new key is installed in Settings → License.',
+    cls: 'bg-red-50 text-red-800 border-red-200',
+  },
+}
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await requireSession()
+  const [license, unreadCount] = await withTenant(async () =>
+    Promise.all([
+      getWorkspaceLicense(),
+      prisma.notification.count({ where: { userId: session.user.id, readAt: null } }),
+    ]),
+  )
+  const banner = LICENSE_BANNERS[license.state]
 
   return (
     <div className="flex min-h-screen bg-slate-100">
@@ -55,7 +79,25 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </form>
         </div>
       </aside>
-      <main className="flex-1 p-8">{children}</main>
+      <div className="flex flex-1 flex-col">
+        <header className="flex items-center justify-end border-b border-slate-200 bg-white px-6 py-2">
+          <Link
+            href="/notifications"
+            className="relative rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100"
+          >
+            🔔
+            {unreadCount > 0 && (
+              <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-indigo-600 px-1 text-[10px] font-bold text-white">
+                {unreadCount}
+              </span>
+            )}
+          </Link>
+        </header>
+        {banner && (
+          <div className={`border-b px-6 py-2 text-sm ${banner.cls}`}>{banner.text}</div>
+        )}
+        <main className="flex-1 p-8">{children}</main>
+      </div>
     </div>
   )
 }

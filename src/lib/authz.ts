@@ -27,5 +27,7 @@ export async function withTenant<T>(fn: () => Promise<T>): Promise<T> {
     roles: session.user.roles,
     permissions: session.user.permissions,
   }
-  return runWithTenant(ctx, fn) as Promise<T>
+  // Await INSIDE the ALS scope: Prisma promises are lazy — they execute on
+  // .then(), so the promise must be subscribed while the context is active.
+  return runWithTenant(ctx, async () => await fn()) as Promise<T>
 }
