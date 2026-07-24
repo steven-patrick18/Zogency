@@ -67,7 +67,10 @@ const ORG: Person[] = [
 const EXTRA_DEPARTMENTS = ['Sales', 'HR & Admin', 'Finance', 'Management']
 
 async function main() {
-  const tenant = await prisma.tenant.findFirstOrThrow({ where: { slug: 'brb' } })
+  // Single-tenant installs: fall back to the only tenant regardless of slug.
+  const tenant =
+    (await prisma.tenant.findFirst({ where: { slug: 'brb' } })) ??
+    (await prisma.tenant.findFirstOrThrow())
   const tenantId = tenant.id
 
   // Departments beyond the 7 delivery boards (tenant-configurable per Q12).
