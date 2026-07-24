@@ -3,6 +3,7 @@
 // Failed events stay replayable with their raw payload.
 import { randomUUID } from 'node:crypto'
 import type { Prisma } from '@/generated/prisma/client'
+import { decryptJson } from '@/lib/crypto'
 import { runWithTenant } from '@/lib/db/context'
 import { prisma, prismaUnscoped, scoped } from '@/lib/db/prisma'
 import { enqueue, registerProcessor } from '@/lib/queue'
@@ -27,10 +28,10 @@ export async function resolveTenantByCredential(
   })
   for (const cred of credentials) {
     try {
-      const config = JSON.parse(cred.configEncrypted)
+      const config = decryptJson<Record<string, string>>(cred.configEncrypted)
       if (config.key === key || config.verifyToken === key) return cred.tenantId
     } catch {
-      // encrypted/unparseable rows are skipped in dev; production uses decrypt()
+      // unreadable row (rotated key) — skip
     }
   }
   return null

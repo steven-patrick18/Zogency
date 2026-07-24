@@ -3,6 +3,7 @@
 // POST — leadgen events; signature verified when an app secret is configured.
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import { NextRequest, NextResponse } from 'next/server'
+import { decryptJson } from '@/lib/crypto'
 import { prismaUnscoped } from '@/lib/db/prisma'
 import { acceptWebhook, resolveTenantByCredential } from '@/modules/leads/intake'
 
@@ -40,7 +41,7 @@ export async function POST(req: NextRequest) {
   let tenantId: string | null = null
   for (const cred of credentials) {
     try {
-      const config = JSON.parse(cred.configEncrypted)
+      const config = decryptJson<Record<string, string>>(cred.configEncrypted)
       if (config.pageId === pageId || credentials.length === 1) {
         // Verify signature when the tenant has an app secret configured.
         if (config.appSecret) {
