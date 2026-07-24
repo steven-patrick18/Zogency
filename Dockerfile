@@ -6,6 +6,12 @@ FROM node:22-alpine
 WORKDIR /app
 RUN apk add --no-cache openssl
 
+# Build-time placeholders: prisma generate needs DATABASE_URL to exist (it
+# never connects) and next build imports server modules. Real values come
+# from compose env at runtime and override these.
+ENV DATABASE_URL="postgresql://build:build@localhost:5432/build" \
+    AUTH_SECRET="build-placeholder"
+
 COPY package.json package-lock.json ./
 COPY prisma ./prisma
 COPY prisma.config.ts tsconfig.json next.config.ts postcss.config.mjs ./
