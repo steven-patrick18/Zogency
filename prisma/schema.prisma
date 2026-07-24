@@ -1,0 +1,280 @@
+// Zogency — schema v1 (Phase 0: platform layer, doc 03 §5.1)
+// Conventions per docs/03-data-model-erd.md §1:
+//   uuid v7 ids, tenant_id on all tenant-scoped tables, created_at/created_by,
+//   snake_case DB names, scoped unique constraints.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ── Global (non-tenant) tables ─────────────────────────────────────────────
+
+model Tenant {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  name      String
+  slug      String   @unique
+  status    TenantStatus @default(active)
+  locale    String   @default("en-IN")
+  timezone  String   @default("Asia/Kolkata")
+  currency  String   @default("INR") @db.Char(3)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  domains     TenantDomain[]
+  settings    TenantSettings?
+  users       User[]
+  roles       Role[]
+  departments Department[]
+  credentials IntegrationCredential[]
+
+  @@map("tenants")
+}
+
+model TenantDomain {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  domain     String    @unique
+  isPrimary  Boolean   @default(false) @map("is_primary")
+  verifiedAt DateTime? @map("verified_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@map("tenant_domains")
+}
+
+model Permission {
+  id          String @id @default(uuid(7)) @db.Uuid
+  key         String @unique
+  module      String
+  description String @default("")
+
+  rolePermissions RolePermission[]
+
+  @@map("permissions")
+}
+
+// ── Tenant-scoped tables ───────────────────────────────────────────────────
+
+model TenantSettings {
+  id                   String  @id @default(uuid(7)) @db.Uuid
+  tenantId             String  @unique @map("tenant_id") @db.Uuid
+  logoFileId           String? @map("logo_file_id") @db.Uuid
+  primaryColor         String  @default("#4f46e5") @map("primary_color")
+  emailSenderName      String? @map("email_sender_name")
+  emailSenderAddress   String? @map("email_sender_address")
+  slaHours             Int     @default(24) @map("sla_hours")
+  revisionRoundDefault Int     @default(2) @map("revision_round_default")
+  featureFlags         Json    @default("{}") @map("feature_flags")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@map("tenant_settings")
+}
+
+model User {
+  id           String     @id @default(uuid(7)) @db.Uuid
+  tenantId     String     @map("tenant_id") @db.Uuid
+  name         String
+  email        String
+  phone        String?
+  passwordHash String     @map("password_hash")
+  totpSecret   String?    @map("totp_secret")
+  status       UserStatus @default(active)
+  lastLoginAt  DateTime?  @map("last_login_at")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  tenant    Tenant     @relation(fields: [tenantId], references: [id])
+  userRoles UserRole[]
+
+  @@unique([tenantId, email])
+  @@map("users")
+}
+
+model Role {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  name      String
+  isSystem  Boolean  @default(false) @map("is_system")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant          Tenant           @relation(fields: [tenantId], references: [id])
+  userRoles       UserRole[]
+  rolePermissions RolePermission[]
+
+  @@unique([tenantId, name])
+  @@map("roles")
+}
+
+model UserRole {
+  userId String @map("user_id") @db.Uuid
+  roleId String @map("role_id") @db.Uuid
+
+  user User @relation(fields: [userId], references: [id])
+  role Role @relation(fields: [roleId], references: [id])
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+model RolePermission {
+  roleId       String @map("role_id") @db.Uuid
+  permissionId String @map("permission_id") @db.Uuid
+
+  role       Role       @relation(fields: [roleId], references: [id])
+  permission Permission @relation(fields: [permissionId], references: [id])
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model Department {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  name       String
+  type       String
+  headUserId String?  @map("head_user_id") @db.Uuid
+  sort       Int      @default(0)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, name])
+  @@map("departments")
+}
+
+// Append-only (doc 03 §3): no UPDATE/DELETE — enforced in domain layer + DB trigger.
+model AuditLog {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  actorId    String?  @map("actor_id") @db.Uuid
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String?  @map("entity_id") @db.Uuid
+  before     Json?
+  after      Json?
+  ip         String?
+  at         DateTime @default(now())
+
+  @@index([tenantId, entityType, entityId, at])
+  @@map("audit_logs")
+}
+
+// Append-only.
+model Notification {
+  id          String              @id @default(uuid(7)) @db.Uuid
+  tenantId    String              @map("tenant_id") @db.Uuid
+  userId      String              @map("user_id") @db.Uuid
+  channel     NotificationChannel
+  templateKey String              @map("template_key")
+  payload     Json                @default("{}")
+  status      NotificationStatus  @default(pending)
+  readAt      DateTime?           @map("read_at")
+  deliveredAt DateTime?           @map("delivered_at")
+  error       String?
+  createdAt   DateTime            @default(now()) @map("created_at")
+
+  @@index([tenantId, userId, readAt])
+  @@map("notifications")
+}
+
+model File {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  storageKey String   @map("storage_key")
+  filename   String
+  mime       String
+  size       Int
+  entityType String?  @map("entity_type")
+  entityId   String?  @map("entity_id") @db.Uuid
+  versionOf  String?  @map("version_of") @db.Uuid
+  uploadedBy String?  @map("uploaded_by") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId, entityType, entityId])
+  @@map("files")
+}
+
+// Append-only; corrections via supersedes_id (doc 03 §3).
+model Comment {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  entityType   String   @map("entity_type")
+  entityId     String   @map("entity_id") @db.Uuid
+  authorId     String?  @map("author_id") @db.Uuid
+  body         String
+  supersedesId String?  @map("supersedes_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId, entityType, entityId, createdAt])
+  @@map("comments")
+}
+
+// Append-only raw webhook intake (doc 02 §6.1).
+model WebhookEvent {
+  id          String        @id @default(uuid(7)) @db.Uuid
+  tenantId    String        @map("tenant_id") @db.Uuid
+  source      String
+  externalId  String        @map("external_id")
+  raw         Json
+  status      WebhookStatus @default(received)
+  processedAt DateTime?     @map("processed_at")
+  error       String?
+  receivedAt  DateTime      @default(now()) @map("received_at")
+
+  @@unique([tenantId, source, externalId])
+  @@map("webhook_events")
+}
+
+model IntegrationCredential {
+  id              String   @id @default(uuid(7)) @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  provider        String
+  configEncrypted String   @map("config_encrypted")
+  status          String   @default("connected")
+  connectedBy     String?  @map("connected_by") @db.Uuid
+  connectedAt     DateTime @default(now()) @map("connected_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, provider])
+  @@map("integration_credentials")
+}
+
+// ── Enums ──────────────────────────────────────────────────────────────────
+
+enum TenantStatus {
+  active
+  suspended
+}
+
+enum UserStatus {
+  active
+  disabled
+}
+
+enum NotificationChannel {
+  in_app
+  email
+  whatsapp
+  sms
+}
+
+enum NotificationStatus {
+  pending
+  sent
+  failed
+}
+
+enum WebhookStatus {
+  received
+  processed
+  failed
+}
