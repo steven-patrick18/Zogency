@@ -9,6 +9,11 @@ import { sample } from './tracker'
 import { sendPing, type PingResult } from './api'
 
 const PING_INTERVAL_MS = 60_000
+// Auto-pause after prolonged inactivity (with a warning first), so idle time
+// off-shift isn't tracked. Resumes automatically on activity.
+const IDLE_WARN_SEC = 5 * 60
+const IDLE_PAUSE_SEC = 10 * 60
+let autoPaused = false
 
 let tray: Tray | null = null
 let setupWindow: BrowserWindow | null = null
@@ -30,6 +35,25 @@ function scheduleTicker() {
 async function tick() {
   if (!isConfigured(config) || config.paused) return
   const s = await sample()
+
+  // Idle auto-pause with warning (FR — agent auto-logout on idle).
+  if (s.idleSec >= IDLE_PAUSE_SEC) {
+    if (!autoPaused) {
+      autoPaused = true
+      lastStatus = 'Auto-paused (inactive) — resumes on activity'
+      tray?.displayBalloon?.({ title: 'Zogency Agent', content: 'Paused after inactivity. Move the mouse to resume.' })
+      rebuildTray()
+    }
+    return // don't report idle-off-shift time
+  }
+  if (autoPaused && s.idleSec < 60) {
+    autoPaused = false // activity resumed
+  }
+  if (s.idleSec >= IDLE_WARN_SEC && s.idleSec < IDLE_PAUSE_SEC && !autoPaused) {
+    lastStatus = `Idle ${Math.floor(s.idleSec / 60)} min — will pause soon`
+    rebuildTray()
+  }
+
   const result: PingResult = await sendPing(config, s)
   const now = new Date().toLocaleTimeString()
   if (result.ok) {

@@ -137,6 +137,42 @@ export const INTEGRATION_CATALOG: ProviderDef[] = [
       { key: 'keySecret', label: 'Key secret', type: 'password', required: true },
     ],
   },
+  // ── Analytics connectors (Reporting v2) ─────────────────────────────────────
+  {
+    provider: 'ga4',
+    name: 'Google Analytics 4',
+    category: 'Analytics',
+    fields: [
+      { key: 'propertyId', label: 'GA4 Property ID', required: true },
+      { key: 'clientEmail', label: 'Service account email', required: true },
+      { key: 'privateKey', label: 'Service account private key', type: 'password', required: true },
+    ],
+    note: 'Website traffic + conversions per client for Reporting v2.',
+  },
+  {
+    provider: 'search_console',
+    name: 'Google Search Console',
+    category: 'Analytics',
+    fields: [
+      { key: 'siteUrl', label: 'Verified site URL', required: true },
+      { key: 'clientEmail', label: 'Service account email', required: true },
+      { key: 'privateKey', label: 'Service account private key', type: 'password', required: true },
+    ],
+    note: 'Organic search impressions/clicks/positions.',
+  },
+  {
+    provider: 'gmb',
+    name: 'Google Business Profile',
+    category: 'Analytics',
+    fields: [
+      { key: 'accountId', label: 'GBP Account ID', required: true },
+      { key: 'clientId', label: 'OAuth client ID', required: true },
+      { key: 'clientSecret', label: 'OAuth client secret', type: 'password', required: true },
+      { key: 'refreshToken', label: 'Refresh token', type: 'password', required: true },
+    ],
+    note: 'Local listing views, calls, and direction requests.',
+  },
+
   // ── Other ─────────────────────────────────────────────────────────────────
   {
     provider: 'google_calendar',

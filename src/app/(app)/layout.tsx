@@ -13,11 +13,15 @@ const NAV: Array<{ label: string; href?: string; sprint?: string }> = [
   { label: 'Clients', href: '/clients' },
   { label: 'Retention', href: '/retention' },
   { label: 'Campaigns', href: '/campaigns' },
+  { label: 'Support', href: '/support' },
+  { label: 'Content', href: '/content' },
+  { label: 'Meetings', href: '/meetings' },
   { label: 'Tasks', href: '/tasks' },
   { label: 'HR', href: '/hr' },
   { label: 'Invoices', href: '/invoices' },
   { label: 'Reports', href: '/reports' },
   { label: 'Productivity', href: '/productivity' },
+  { label: 'Chat', href: '/chat' },
   { label: 'Settings', href: '/settings' },
 ]
 

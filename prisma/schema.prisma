@@ -88,6 +88,7 @@ model User {
   phone        String?
   passwordHash String     @map("password_hash")
   totpSecret   String?    @map("totp_secret")
+  totpEnabled  Boolean    @default(false) @map("totp_enabled") // 2FA active
   avatar       String?    // data-URI in dev; object-storage URL after the DO deploy
   setupToken   String?    @unique @map("setup_token") // one-time first-login link (provisioned installs)
   demoExpiresAt DateTime? @map("demo_expires_at") // disposable demo logins auto-disable after this
@@ -548,15 +549,19 @@ model Client {
 }
 
 model ClientContact {
-  id        String   @id @default(uuid(7)) @db.Uuid
-  tenantId  String   @map("tenant_id") @db.Uuid
-  clientId  String   @map("client_id") @db.Uuid
-  name      String
-  role      String?
-  phone     String?
-  email     String?
-  isPrimary Boolean  @default(false) @map("is_primary")
-  createdAt DateTime @default(now()) @map("created_at")
+  id                 String   @id @default(uuid(7)) @db.Uuid
+  tenantId           String   @map("tenant_id") @db.Uuid
+  clientId           String   @map("client_id") @db.Uuid
+  name               String
+  role               String?
+  phone              String?
+  email              String?
+  isPrimary          Boolean  @default(false) @map("is_primary")
+  // Client portal access (FR — Phase 2 portal).
+  portalEnabled      Boolean  @default(false) @map("portal_enabled")
+  portalPasswordHash String?  @map("portal_password_hash")
+  portalInviteToken  String?  @unique @map("portal_invite_token") // one-time set-password link
+  createdAt          DateTime @default(now()) @map("created_at")
 
   client Client @relation(fields: [clientId], references: [id])
 
@@ -1460,6 +1465,211 @@ model UpsellOpportunity {
   service ServiceCatalogItem @relation(fields: [serviceId], references: [id])
 
   @@map("upsell_opportunities")
+}
+
+// ── Payroll (Phase 3) — attendance-linked payout sheets + payslips ──────────
+
+model PayrollRun {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  periodmonth Int       @map("period_month") // 1–12
+  periodyear  Int       @map("period_year")
+  status      String    @default("draft") // draft|finalized
+  createdBy   String?   @map("created_by") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at")
+  finalizedAt DateTime? @map("finalized_at")
+
+  payslips Payslip[]
+
+  @@unique([tenantId, periodmonth, periodyear])
+  @@map("payroll_runs")
+}
+
+model Payslip {
+  id          String  @id @default(uuid(7)) @db.Uuid
+  tenantId    String  @map("tenant_id") @db.Uuid
+  runId       String  @map("run_id") @db.Uuid
+  employeeId  String  @map("employee_id") @db.Uuid
+  basic       Decimal @db.Decimal(12, 2)
+  allowances  Decimal @default(0) @db.Decimal(12, 2)
+  deductions  Decimal @default(0) @db.Decimal(12, 2)
+  lopDays     Int     @default(0) @map("lop_days") // loss-of-pay days from attendance/leave
+  netPay      Decimal @map("net_pay") @db.Decimal(12, 2)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  run      PayrollRun @relation(fields: [runId], references: [id])
+
+  @@unique([tenantId, runId, employeeId])
+  @@map("payslips")
+}
+
+// Employee salary structure (used by payroll).
+model SalaryStructure {
+  id         String  @id @default(uuid(7)) @db.Uuid
+  tenantId   String  @map("tenant_id") @db.Uuid
+  employeeId String  @unique @map("employee_id") @db.Uuid
+  basic      Decimal @db.Decimal(12, 2)
+  allowances Decimal @default(0) @db.Decimal(12, 2)
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@map("salary_structures")
+}
+
+// ── Meetings module (Phase 3) — recording upload + AI summary ───────────────
+
+model Meeting {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
+  clientId       String?   @map("client_id") @db.Uuid
+  title          String
+  meetingAt      DateTime  @map("meeting_at")
+  recordingUrl   String?   @map("recording_url")
+  transcript     String?
+  aiSummary      String?   @map("ai_summary")
+  summaryStatus  String    @default("none") @map("summary_status") // none|pending|done|failed
+  createdBy      String?   @map("created_by") @db.Uuid
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  @@index([tenantId, meetingAt])
+  @@map("meetings")
+}
+
+// ── Phase 2 comms: portal, tickets, chat, content, campaigns ────────────────
+
+// Support tickets (client portal ↔ staff).
+model SupportTicket {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  clientId   String    @map("client_id") @db.Uuid
+  contactId  String?   @map("contact_id") @db.Uuid // portal contact who raised it
+  subject    String
+  status     String    @default("open") // open|in_progress|resolved|closed
+  priority   String    @default("normal") // low|normal|high
+  assigneeId String?   @map("assignee_id") @db.Uuid // staff user
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  messages TicketMessage[]
+
+  @@index([tenantId, status])
+  @@map("support_tickets")
+}
+
+// Append-only ticket thread; authorKind distinguishes client vs staff.
+model TicketMessage {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  ticketId   String   @map("ticket_id") @db.Uuid
+  authorKind String   @map("author_kind") // client|staff
+  authorId   String?  @map("author_id") @db.Uuid
+  authorName String   @map("author_name")
+  body       String
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  ticket SupportTicket @relation(fields: [ticketId], references: [id])
+
+  @@index([tenantId, ticketId, createdAt])
+  @@map("ticket_messages")
+}
+
+// Internal team chat with @mentions (append-only).
+model ChatMessage {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  channel    String   @default("general") // simple named channels
+  authorId   String   @map("author_id") @db.Uuid
+  body       String
+  mentions   Json     @default("[]") // user ids @-mentioned
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId, channel, createdAt])
+  @@map("chat_messages")
+}
+
+// Content calendar item (per client/campaign).
+model ContentItem {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  clientId    String?   @map("client_id") @db.Uuid
+  campaignId  String?   @map("campaign_id") @db.Uuid
+  title       String
+  channel     String    @default("instagram") // instagram|facebook|blog|email|youtube|other
+  scheduledOn DateTime  @map("scheduled_on") @db.Date
+  status      String    @default("idea") // idea|drafting|review|scheduled|published
+  ownerId     String?   @map("owner_id") @db.Uuid
+  notes       String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@index([tenantId, scheduledOn])
+  @@map("content_items")
+}
+
+// Email campaign (builder + queued send; live send gated on email integration).
+model EmailCampaign {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  name        String
+  subject     String
+  body        String
+  status      String   @default("draft") // draft|scheduled|sending|sent
+  scheduledAt DateTime? @map("scheduled_at")
+  sentAt      DateTime? @map("sent_at")
+  createdBy   String?  @map("created_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  recipients EmailCampaignRecipient[]
+
+  @@map("email_campaigns")
+}
+
+model EmailCampaignRecipient {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  campaignId String    @map("campaign_id") @db.Uuid
+  email      String
+  name       String?
+  status     String    @default("pending") // pending|sent|failed
+  sentAt     DateTime? @map("sent_at")
+
+  campaign EmailCampaign @relation(fields: [campaignId], references: [id])
+
+  @@map("email_campaign_recipients")
+}
+
+// Scheduled report delivery (email/WhatsApp; queued, send gated on integration).
+model ScheduledDelivery {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  reportKey   String    @map("report_key") // which dashboard/report
+  clientId    String?   @map("client_id") @db.Uuid
+  channel     String    @default("email") // email|whatsapp
+  recipient   String
+  cadence     String    @default("weekly") // daily|weekly|monthly
+  nextRunOn   DateTime  @map("next_run_on") @db.Date
+  lastSentAt  DateTime? @map("last_sent_at")
+  enabled     Boolean   @default(true)
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([tenantId, nextRunOn, enabled])
+  @@map("scheduled_deliveries")
+}
+
+// Retainer billing schedule — auto-generates invoices monthly (FR-8/retainer).
+model RetainerSchedule {
+  id           String    @id @default(uuid(7)) @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+  clientId     String    @map("client_id") @db.Uuid
+  projectId    String?   @map("project_id") @db.Uuid
+  description  String
+  amount       Decimal   @db.Decimal(12, 2)
+  billingDay   Int       @default(1) @map("billing_day") // day of month
+  nextInvoiceOn DateTime @map("next_invoice_on") @db.Date
+  active       Boolean   @default(true)
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  @@index([tenantId, nextInvoiceOn, active])
+  @@map("retainer_schedules")
 }
 
 // ── Desktop activity monitoring (Electron agent ingest) ─────────────────────

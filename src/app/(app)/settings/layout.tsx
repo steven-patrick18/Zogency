@@ -9,6 +9,7 @@ const TABS = [
   { label: 'Automation', href: '/settings/automation' },
   { label: 'Integrations', href: '/settings/integrations' },
   { label: 'License', href: '/settings/license' },
+  { label: 'Security', href: '/settings/security' },
 ]
 
 export default async function SettingsLayout({ children }: { children: React.ReactNode }) {

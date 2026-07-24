@@ -9,6 +9,7 @@ const TABS = [
   { label: 'Attendance & Leave', href: '/hr/attendance' },
   { label: 'Performance', href: '/hr/performance' },
   { label: 'Policy & Calendar', href: '/hr/policy' },
+  { label: 'Payroll', href: '/hr/payroll' },
   { label: 'Capacity', href: '/hr/capacity' },
 ]
 

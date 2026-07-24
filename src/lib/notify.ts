@@ -42,6 +42,11 @@ export function renderNotification(templateKey: string, payload: Record<string, 
     'renewal.due': (p) => `Renewal due in ${p.daysLeft} days: ${p.client} (₹${p.value}) — outreach task created.`,
     'client.churn_risk': (p) => `Churn risk: ${p.client} health is ${p.band} (${p.score}/100) — review the account.`,
     'vendor.installed': (p) => `✔ ${p.company} installed at https://${p.domain} — share the setup link with them.`,
+    'portal.approved': (p) => `${p.by} approved "${p.name}" in the client portal.`,
+    'portal.revision': (p) => `${p.by} requested a revision on "${p.name}" via the portal.`,
+    'ticket.new': (p) => `New support ticket from ${p.client}: "${p.subject}"`,
+    'ticket.resolved': (p) => `Your ticket "${p.subject}" was marked resolved.`,
+    'chat.mention': (p) => `${p.by} mentioned you in #${p.channel}.`,
   }
   return templates[templateKey]?.(payload) ?? templateKey
 }

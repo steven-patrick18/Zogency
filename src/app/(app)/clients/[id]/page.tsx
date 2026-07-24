@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import { requirePermission, withTenant } from '@/lib/authz'
 import { prisma } from '@/lib/db/prisma'
 import { toggleOnboardingItemAction } from '@/modules/tasks/actions'
+import { InvitePortalButton } from './invite-button'
 
 export default async function ClientDetailPage({ params }: { params: Promise<{ id: string }> }) {
   await requirePermission('clients.view')
@@ -79,6 +80,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
                 <li key={c.id}>
                   <p className="font-medium text-slate-900">{c.name} {c.isPrimary && <span className="text-xs text-indigo-600">primary</span>}</p>
                   <p className="text-xs text-slate-500">{[c.phone, c.email].filter(Boolean).join(' · ')}</p>
+                  {c.email && <InvitePortalButton contactId={c.id} />}
                 </li>
               ))}
             </ul>
