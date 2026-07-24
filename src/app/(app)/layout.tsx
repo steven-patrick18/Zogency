@@ -7,7 +7,7 @@ import { getWorkspaceLicense } from '@/modules/settings/service'
 // Module nav — items without an href ship in later sprints (doc 10).
 const NAV: Array<{ label: string; href?: string; sprint?: string }> = [
   { label: 'Dashboard', href: '/dashboard' },
-  { label: 'Leads', sprint: 'S2' },
+  { label: 'Leads', href: '/leads' },
   { label: 'Pipeline', sprint: 'S3' },
   { label: 'Clients', sprint: 'S6' },
   { label: 'Campaigns', sprint: 'P2' },

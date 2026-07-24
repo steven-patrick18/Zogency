@@ -14,6 +14,12 @@ export const TENANT_SCOPED_MODELS = new Set([
   'Comment',
   'WebhookEvent',
   'IntegrationCredential',
+  'LeadSource',
+  'LeadStatus',
+  'Lead',
+  'LeadStatusHistory',
+  'LeadAssignment',
+  'AssignmentRule',
 ])
 
 /** Platform-level models with no tenant_id — only reachable via prismaUnscoped. */

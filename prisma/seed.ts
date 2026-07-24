@@ -135,7 +135,75 @@ async function main() {
     create: { userId: admin.id, roleId: adminRole.id },
   })
 
-  console.log(`Seeded tenant "${tenant.name}" (${tenant.slug}) with ${PERMISSIONS.length} permissions, ${Object.keys(ROLES).length} roles, ${DEPARTMENTS.length} departments, admin admin@brb.digital / Admin@123`)
+  // ── Sprint 2: lead statuses (the 7 PRD defaults), sources, assignment rule ──
+  const LEAD_STATUSES: Array<[name: string, sort: number, flags?: { isTerminal?: boolean; isWon?: boolean; isJunk?: boolean }, color?: string]> = [
+    ['New', 0, {}, '#3b82f6'],
+    ['Connected', 1, {}, '#06b6d4'],
+    ['Follow-up', 2, {}, '#f59e0b'],
+    ['Meeting Scheduled', 3, {}, '#8b5cf6'],
+    ['Meeting Done', 4, {}, '#6366f1'],
+    ['Junk', 5, { isTerminal: true, isJunk: true }, '#94a3b8'],
+    ['Won', 6, { isTerminal: true, isWon: true }, '#22c55e'],
+  ]
+  for (const [name, sort, flags, color] of LEAD_STATUSES) {
+    await prisma.leadStatus.upsert({
+      where: { tenantId_name: { tenantId: tenant.id, name } },
+      update: { sort, ...flags, color },
+      create: { tenantId: tenant.id, name, sort, ...flags, color },
+    })
+  }
+
+  const LEAD_SOURCES: Array<[type: string, name: string, isMql: boolean]> = [
+    ['meta', 'Meta Lead Ads', true],
+    ['google', 'Google Ads Lead Form', true],
+    ['website', 'Website Form', true],
+    ['referral', 'Referral', false],
+    ['cold_call', 'Cold Calling', false],
+    ['linkedin', 'LinkedIn Outreach', false],
+    ['event', 'Events', false],
+    ['csv', 'CSV Import', false],
+  ]
+  for (const [type, name, isMql] of LEAD_SOURCES) {
+    await prisma.leadSource.upsert({
+      where: { tenantId_name: { tenantId: tenant.id, name } },
+      update: { type, isMql },
+      create: { tenantId: tenant.id, type, name, isMql },
+    })
+  }
+
+  // Default round-robin rule over all users holding the Sales Rep role.
+  const salesRepRole = await prisma.role.findUniqueOrThrow({
+    where: { tenantId_name: { tenantId: tenant.id, name: 'Sales Rep' } },
+  })
+  const reps = await prisma.userRole.findMany({ where: { roleId: salesRepRole.id } })
+  const existingRule = await prisma.assignmentRule.findFirst({
+    where: { tenantId: tenant.id, strategy: 'round_robin' },
+  })
+  if (!existingRule) {
+    await prisma.assignmentRule.create({
+      data: {
+        tenantId: tenant.id,
+        name: 'Round-robin to Sales Reps',
+        strategy: 'round_robin',
+        targetUserIds: reps.map((r) => r.userId),
+        priority: 0,
+      },
+    })
+  }
+
+  // Website-form intake key (doc 09 §2.3) — per-tenant credential.
+  await prisma.integrationCredential.upsert({
+    where: { tenantId_provider: { tenantId: tenant.id, provider: 'website_form' } },
+    update: {},
+    create: {
+      tenantId: tenant.id,
+      provider: 'website_form',
+      // Dev key — plain here; production keys go through the encryption path.
+      configEncrypted: JSON.stringify({ key: 'brb-webform-dev-key' }),
+    },
+  })
+
+  console.log(`Seeded tenant "${tenant.name}" (${tenant.slug}) with ${PERMISSIONS.length} permissions, ${Object.keys(ROLES).length} roles, ${DEPARTMENTS.length} departments, ${LEAD_STATUSES.length} lead statuses, ${LEAD_SOURCES.length} sources, admin admin@brb.digital / Admin@123`)
 }
 
 main().finally(() => prisma.$disconnect())

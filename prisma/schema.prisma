@@ -249,6 +249,121 @@ model IntegrationCredential {
   @@map("integration_credentials")
 }
 
+// ── Sales: leads (Sprint 2 — doc 03 §5.2, doc 04 §2–3) ─────────────────────
+
+model LeadSource {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  type        String   // meta|google|website|referral|cold_call|linkedin|event|csv
+  name        String
+  campaignRef String?  @map("campaign_ref")
+  isMql       Boolean  @default(false) @map("is_mql")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  leads Lead[]
+
+  @@unique([tenantId, name])
+  @@map("lead_sources")
+}
+
+// Tenant-scoped seeded table, NOT a DB enum — Admin-editable per FR-2.6.
+model LeadStatus {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  name       String
+  sort       Int      @default(0)
+  isTerminal Boolean  @default(false) @map("is_terminal")
+  isWon      Boolean  @default(false) @map("is_won")
+  isJunk     Boolean  @default(false) @map("is_junk")
+  color      String   @default("#64748b")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  leads Lead[]
+
+  @@unique([tenantId, name])
+  @@map("lead_statuses")
+}
+
+model Lead {
+  id               String    @id @default(uuid(7)) @db.Uuid
+  tenantId         String    @map("tenant_id") @db.Uuid
+  name             String
+  company          String?
+  phone            String?   // E.164-normalized
+  email            String?   // lowercased
+  city             String?   // required for FR-9.1 reporting — captured at intake
+  industry         String?
+  sourceId         String    @map("source_id") @db.Uuid
+  statusId         String    @map("status_id") @db.Uuid
+  ownerId          String?   @map("owner_id") @db.Uuid
+  slaDueAt         DateTime? @map("sla_due_at")
+  firstContactedAt DateTime? @map("first_contacted_at")
+  junkReason       String?   @map("junk_reason")
+  archivedAt       DateTime? @map("archived_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  source        LeadSource         @relation(fields: [sourceId], references: [id])
+  status        LeadStatus         @relation(fields: [statusId], references: [id])
+  statusHistory LeadStatusHistory[]
+  assignments   LeadAssignment[]
+
+  // Postgres treats NULLs as distinct — rows without phone/email don't collide.
+  @@unique([tenantId, phone])
+  @@unique([tenantId, email])
+  @@index([tenantId, statusId, ownerId])
+  @@index([tenantId, slaDueAt])
+  @@map("leads")
+}
+
+// Append-only (FR-2.7–2.9): comment is mandatory on every transition.
+model LeadStatusHistory {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  leadId       String   @map("lead_id") @db.Uuid
+  fromStatusId String?  @map("from_status_id") @db.Uuid
+  toStatusId   String   @map("to_status_id") @db.Uuid
+  commentId    String   @map("comment_id") @db.Uuid
+  actorId      String?  @map("actor_id") @db.Uuid
+  at           DateTime @default(now())
+
+  lead Lead @relation(fields: [leadId], references: [id])
+
+  @@index([tenantId, leadId, at])
+  @@map("lead_status_history")
+}
+
+// Append-only: latest row = current owner; measures the <1-min NFR.
+model LeadAssignment {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  leadId     String   @map("lead_id") @db.Uuid
+  assigneeId String   @map("assignee_id") @db.Uuid
+  assignedBy String?  @map("assigned_by") @db.Uuid // null = system/rule
+  ruleId     String?  @map("rule_id") @db.Uuid
+  at         DateTime @default(now())
+
+  lead Lead @relation(fields: [leadId], references: [id])
+
+  @@index([tenantId, leadId, at])
+  @@index([tenantId, assigneeId, at])
+  @@map("lead_assignments")
+}
+
+model AssignmentRule {
+  id            String   @id @default(uuid(7)) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  name          String
+  strategy      String   // round_robin|territory|product_line|account_size
+  criteria      Json     @default("{}")
+  targetUserIds Json     @default("[]") @map("target_user_ids")
+  priority      Int      @default(0)
+  enabled       Boolean  @default(true)
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@map("assignment_rules")
+}
+
 // ── Enums ──────────────────────────────────────────────────────────────────
 
 enum TenantStatus {

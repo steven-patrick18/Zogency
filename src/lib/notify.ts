@@ -26,6 +26,8 @@ export function renderNotification(templateKey: string, payload: Record<string, 
     'user.created': (p) => `Your Zogency account was created — welcome, ${p.name ?? ''}!`,
     'user.roles_changed': (p) => `Your roles were updated to: ${(p.roles as string[])?.join(', ') ?? ''}`,
     'license.expiring': (p) => `The workspace license expires on ${p.expiresAt} — renew soon.`,
+    'lead.assigned': (p) => `New lead assigned to you: ${p.name}${p.company ? ` (${p.company})` : ''} — contact within SLA.`,
+    'lead.reengagement': (p) => `Closed lead "${p.name}" submitted a new enquiry — possible re-engagement.`,
   }
   return templates[templateKey]?.(payload) ?? templateKey
 }
