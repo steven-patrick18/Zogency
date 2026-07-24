@@ -39,6 +39,8 @@ export function renderNotification(templateKey: string, payload: Record<string, 
     'hr.new_hire': (p) => `${p.name} joins your team as ${p.designation} — onboarding checklist created.`,
     'hr.leave_requested': (p) => `${p.name} requested ${p.days} day(s) of leave — review in HR.`,
     'hr.leave_decided': (p) => `Your leave request (${p.days} day(s)) was ${p.decision}.`,
+    'renewal.due': (p) => `Renewal due in ${p.daysLeft} days: ${p.client} (₹${p.value}) — outreach task created.`,
+    'client.churn_risk': (p) => `Churn risk: ${p.client} health is ${p.band} (${p.score}/100) — review the account.`,
   }
   return templates[templateKey]?.(payload) ?? templateKey
 }
