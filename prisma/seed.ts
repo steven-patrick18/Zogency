@@ -134,8 +134,19 @@ async function main() {
       name: adminName,
       email: adminEmail,
       passwordHash: await bcrypt.hash(adminPassword, 12),
+      // Provisioned installs: the client sets their own password via the
+      // one-time /setup/<token> link (vendor console flow).
+      setupToken: process.env.SEED_ADMIN_SETUP_TOKEN || null,
     },
   })
+
+  // Provisioned installs arrive pre-licensed (vendor console flow).
+  if (process.env.SEED_LICENSE_KEY) {
+    await prisma.tenantSettings.update({
+      where: { tenantId: tenant.id },
+      data: { licenseKey: process.env.SEED_LICENSE_KEY },
+    })
+  }
   await prisma.userRole.upsert({
     where: { userId_roleId: { userId: admin.id, roleId: adminRole.id } },
     update: {},

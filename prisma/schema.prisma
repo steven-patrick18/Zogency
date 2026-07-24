@@ -89,6 +89,7 @@ model User {
   passwordHash String     @map("password_hash")
   totpSecret   String?    @map("totp_secret")
   avatar       String?    // data-URI in dev; object-storage URL after the DO deploy
+  setupToken   String?    @unique @map("setup_token") // one-time first-login link (provisioned installs)
   status       UserStatus @default(active)
   lastLoginAt  DateTime?  @map("last_login_at")
   createdAt    DateTime   @default(now()) @map("created_at")
@@ -1304,6 +1305,33 @@ model PerformanceReview {
 
   @@unique([tenantId, employeeId, cycleId])
   @@map("performance_reviews")
+}
+
+// ── Vendor console (master server only, ZOGENCY_VENDOR_MODE=1) ──────────────
+
+// A provisioned client install. SSH credentials are AES-encrypted and CLEARED
+// automatically after a successful install.
+model VendorClient {
+  id               String    @id @default(uuid(7)) @db.Uuid
+  tenantId         String    @map("tenant_id") @db.Uuid
+  companyName      String    @map("company_name")
+  contactEmail     String    @map("contact_email")
+  domain           String
+  serverIp         String    @map("server_ip")
+  sshUser          String    @default("root") @map("ssh_user")
+  sshPasswordEnc   String?   @map("ssh_password_enc") // encrypted; null after success
+  licenseKey       String    @map("license_key")
+  licenseExpiresAt DateTime  @map("license_expires_at")
+  plan             String    @default("pro")
+  seats            Int       @default(15)
+  status           String    @default("pending") // pending|installing|installed|failed
+  installLog       String    @default("") @map("install_log")
+  setupLink        String?   @map("setup_link")
+  installedAt      DateTime? @map("installed_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  @@map("vendor_clients")
 }
 
 // ── Retention & renewal (Phase 2 — FR-7.1–7.6, doc 07 §5) ───────────────────

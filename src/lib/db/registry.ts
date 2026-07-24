@@ -83,6 +83,7 @@ export const TENANT_SCOPED_MODELS = new Set([
   'ChurnFlag',
   'ServiceCatalogItem',
   'UpsellOpportunity',
+  'VendorClient',
 ])
 
 /** Platform-level models with no tenant_id — only reachable via prismaUnscoped. */

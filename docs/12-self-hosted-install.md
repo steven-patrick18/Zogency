@@ -36,7 +36,25 @@ First build takes a few minutes. Then open `https://<domain>` and log in with th
 | Backups | Nightly gzip dumps in `/opt/zogency/deploy/backups`, 30-day retention — **copy offsite**; backup ownership is the operator's (doc 02 §11.2) |
 | Restore | `gunzip -c backup.sql.gz \| docker compose -f …/docker-compose.yml exec -T postgres psql -U postgres zogency` |
 
-## Issuing the license key (vendor side — you)
+## One-click provisioning from the master server (Vendor console)
+
+On the master server (demo.zogency.com), add to `/opt/zogency/.env.production`:
+
+```
+ZOGENCY_VENDOR_MODE=1
+ZOGENCY_LICENSE_PRIVATE_KEY=<production private key>
+```
+
+and restart. A **Vendor** item appears in the sidebar. For each new client:
+
+1. Client provides: **company name, admin email, domain (A-record already pointed at their server), server IP, root SSH password**
+2. Vendor → **New client install** → enter those + plan/seats/days → **Issue license & install**
+3. The console issues the license, SSHes in, runs the installer non-interactively (license pre-activated, admin seeded with a one-time setup token), streams the log, and — on success — **deletes the SSH credentials** and shows a **setup link**
+4. Share `https://<their-domain>/setup/<token>` with the client — they set their own name + password on first open (single-use link) and log in. Done.
+
+Failures keep the log + a Retry button (re-enter the SSH password if it was already cleared).
+
+## Issuing the license key manually (vendor side — you)
 
 ```bash
 ZOGENCY_LICENSE_PRIVATE_KEY=<prod-private-key> npx tsx scripts/issue-license.ts \

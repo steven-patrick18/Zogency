@@ -41,6 +41,7 @@ export function renderNotification(templateKey: string, payload: Record<string, 
     'hr.leave_decided': (p) => `Your leave request (${p.days} day(s)) was ${p.decision}.`,
     'renewal.due': (p) => `Renewal due in ${p.daysLeft} days: ${p.client} (₹${p.value}) — outreach task created.`,
     'client.churn_risk': (p) => `Churn risk: ${p.client} health is ${p.band} (${p.score}/100) — review the account.`,
+    'vendor.installed': (p) => `✔ ${p.company} installed at https://${p.domain} — share the setup link with them.`,
   }
   return templates[templateKey]?.(payload) ?? templateKey
 }

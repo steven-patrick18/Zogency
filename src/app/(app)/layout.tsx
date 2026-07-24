@@ -3,6 +3,7 @@ import { requireSession, withTenant } from '@/lib/authz'
 import { prisma } from '@/lib/db/prisma'
 import { logoutAction } from '@/modules/auth/actions'
 import { getWorkspaceLicense } from '@/modules/settings/service'
+import { vendorModeEnabled } from '@/modules/vendor/config'
 
 // Module nav — items without an href ship in later sprints (doc 10).
 const NAV: Array<{ label: string; href?: string; sprint?: string }> = [
@@ -45,6 +46,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   )
   const banner = LICENSE_BANNERS[license.state]
   const sidebarAvatar = me?.avatar ?? null
+  const nav = vendorModeEnabled()
+    ? [...NAV, { label: 'Vendor', href: '/vendor' }]
+    : NAV
 
   return (
     <div className="flex min-h-screen bg-slate-100">
@@ -53,7 +57,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <span className="text-lg font-bold text-white">Zogency</span>
         </div>
         <nav className="flex-1 space-y-0.5 px-3 py-4">
-          {NAV.map((item) =>
+          {nav.map((item) =>
             item.href ? (
               <Link
                 key={item.label}

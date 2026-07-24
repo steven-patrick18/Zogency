@@ -41,20 +41,32 @@ fi
 cd "$DIR"
 
 # ── Configuration (first run only) ──────────────────────────────────────────
+# Non-interactive mode (vendor-console provisioning): pass ZOGENCY_DOMAIN,
+# ZOGENCY_TENANT_NAME, ZOGENCY_ADMIN_EMAIL (+ optional ZOGENCY_ADMIN_SETUP_TOKEN,
+# ZOGENCY_LICENSE_KEY, ZOGENCY_LICENSE_PUBLIC_KEY) as env vars — no prompts.
 ENV_FILE="$DIR/.env.production"
 if [ ! -f "$ENV_FILE" ]; then
-  # Prompts read from the terminal even when piped via curl | bash.
-  exec < /dev/tty || true
-  echo
-  echo -e "${BOLD}Zogency setup — a few questions:${NC}"
-  read -rp "  Domain (e.g. crm.youragency.com, DNS already pointed here): " DOMAIN
-  [ -n "$DOMAIN" ] || fail "Domain is required."
-  read -rp "  Agency name: " TENANT_NAME
-  [ -n "$TENANT_NAME" ] || fail "Agency name is required."
-  read -rp "  Admin email: " ADMIN_EMAIL
-  [ -n "$ADMIN_EMAIL" ] || fail "Admin email is required."
-  read -rsp "  Admin password (min 8 chars): " ADMIN_PASSWORD; echo
-  [ "${#ADMIN_PASSWORD}" -ge 8 ] || fail "Password must be at least 8 characters."
+  if [ -n "${ZOGENCY_DOMAIN:-}" ]; then
+    DOMAIN="$ZOGENCY_DOMAIN"
+    TENANT_NAME="${ZOGENCY_TENANT_NAME:?ZOGENCY_TENANT_NAME required in non-interactive mode}"
+    ADMIN_EMAIL="${ZOGENCY_ADMIN_EMAIL:?ZOGENCY_ADMIN_EMAIL required in non-interactive mode}"
+    # Random password — the client sets their own via the /setup link.
+    ADMIN_PASSWORD=$(openssl rand -hex 16 2>/dev/null || docker run --rm alpine/openssl rand -hex 16)
+    say "Non-interactive install for ${DOMAIN} (${TENANT_NAME})"
+  else
+    # Prompts read from the terminal even when piped via curl | bash.
+    exec < /dev/tty || true
+    echo
+    echo -e "${BOLD}Zogency setup — a few questions:${NC}"
+    read -rp "  Domain (e.g. crm.youragency.com, DNS already pointed here): " DOMAIN
+    [ -n "$DOMAIN" ] || fail "Domain is required."
+    read -rp "  Agency name: " TENANT_NAME
+    [ -n "$TENANT_NAME" ] || fail "Agency name is required."
+    read -rp "  Admin email: " ADMIN_EMAIL
+    [ -n "$ADMIN_EMAIL" ] || fail "Admin email is required."
+    read -rsp "  Admin password (min 8 chars): " ADMIN_PASSWORD; echo
+    [ "${#ADMIN_PASSWORD}" -ge 8 ] || fail "Password must be at least 8 characters."
+  fi
 
   TENANT_SLUG=$(echo "$TENANT_NAME" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed 's/^-\|-$//g' | cut -c1-30)
   say "Generating secrets…"
@@ -71,6 +83,10 @@ SEED_ADMIN_NAME=Admin
 SEED_ADMIN_EMAIL=${ADMIN_EMAIL}
 SEED_ADMIN_PASSWORD=${ADMIN_PASSWORD}
 EOF
+  # Provisioning extras (present only in non-interactive installs).
+  [ -n "${ZOGENCY_ADMIN_SETUP_TOKEN:-}" ] && echo "SEED_ADMIN_SETUP_TOKEN=${ZOGENCY_ADMIN_SETUP_TOKEN}" >> "$ENV_FILE"
+  [ -n "${ZOGENCY_LICENSE_KEY:-}" ] && echo "SEED_LICENSE_KEY=${ZOGENCY_LICENSE_KEY}" >> "$ENV_FILE"
+  [ -n "${ZOGENCY_LICENSE_PUBLIC_KEY:-}" ] && echo "ZOGENCY_LICENSE_PUBLIC_KEY=${ZOGENCY_LICENSE_PUBLIC_KEY}" >> "$ENV_FILE"
   chmod 600 "$ENV_FILE"
 else
   say "Using existing $ENV_FILE"
