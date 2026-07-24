@@ -87,11 +87,26 @@ export async function requestBudgetApproval(campaignId: string): Promise<GateRes
   return { ok: true }
 }
 
-async function approvedRequest(type: string, campaignId: string): Promise<boolean> {
+/**
+ * A gate passes only with an approval that is still CURRENT: the approved
+ * content must not have changed since the decision. `contentUpdatedAt` is the
+ * entity's updatedAt; if it is newer than the approval's decidedAt the approval
+ * is stale (content edited after sign-off) and the gate must fail.
+ */
+async function approvedRequest(
+  type: string,
+  campaignId: string,
+  contentUpdatedAt?: Date | null,
+): Promise<boolean> {
   const approved = await prisma.approvalRequest.findFirst({
     where: { type, entityId: campaignId, state: 'approved' },
+    orderBy: { decidedAt: 'desc' },
   })
-  return !!approved
+  if (!approved) return false
+  if (contentUpdatedAt && approved.decidedAt && contentUpdatedAt > approved.decidedAt) {
+    return false // approved content was edited afterwards — sign-off no longer valid
+  }
+  return true
 }
 
 async function notifyApprovers(permissionKey: string, template: string, payload: Record<string, unknown>) {
@@ -107,19 +122,21 @@ async function notifyApprovers(permissionKey: string, template: string, payload:
 /** Gate checks per target status (doc 05). */
 async function checkGate(campaignId: string, to: CampaignStatusName): Promise<GateResult> {
   if (to === 'planning') {
-    if (!(await approvedRequest('brief', campaignId))) {
-      return { ok: false, error: 'The brief needs internal sign-off before planning starts (FR-3.3).' }
+    const brief = await prisma.brief.findUnique({ where: { campaignId } })
+    if (!(await approvedRequest('brief', campaignId, brief?.updatedAt))) {
+      return { ok: false, error: 'The brief needs internal sign-off before planning starts — re-request approval if it was edited (FR-3.3).' }
     }
   }
   if (to === 'creative') {
-    const [strategy, plan] = await Promise.all([
+    const [strategy, plan, budget] = await Promise.all([
       prisma.campaignStrategy.findUnique({ where: { campaignId } }),
       prisma.campaignPlan.findUnique({ where: { campaignId } }),
+      prisma.budget.findUnique({ where: { campaignId } }),
     ])
     if (!strategy) return { ok: false, error: 'Define the strategy first (FR-3.4).' }
     if (!plan) return { ok: false, error: 'Build the project plan first (FR-3.5).' }
-    if (!(await approvedRequest('budget', campaignId))) {
-      return { ok: false, error: 'The budget must be approved before execution begins (FR-3.6).' }
+    if (!(await approvedRequest('budget', campaignId, budget?.updatedAt))) {
+      return { ok: false, error: 'The budget must be approved before execution begins — re-request approval if it was changed (FR-3.6).' }
     }
   }
   if (to === 'approval') {

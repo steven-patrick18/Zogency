@@ -1,5 +1,8 @@
-// In-memory sliding-window rate limiter (login + webhooks). Per-process; good
-// enough for a single-tenant self-hosted box. Redis-backed when REDIS_URL is set.
+// In-memory fixed-window rate limiter (login + webhooks). Per-PROCESS state:
+// each web instance keeps its own buckets, so behind N replicas the effective
+// limit is up to N× the configured value. This is adequate for single-instance
+// self-hosted boxes; multi-instance cloud deployments should front this with a
+// shared store (Redis INCR + EXPIRE) to enforce a global limit. Not yet wired.
 type Bucket = { count: number; resetAt: number }
 const buckets = new Map<string, Bucket>()
 

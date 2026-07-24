@@ -33,7 +33,7 @@ export async function invitePortalContactAction(_p: PortalInviteState, formData:
 
 export async function staffReplyTicketAction(formData: FormData) {
   const session = await requireSession()
-  await requirePermission('clients.view')
+  await requirePermission('clients.edit')
   const ticketId = z.string().uuid().parse(formData.get('ticketId'))
   const body = String(formData.get('body') ?? '').trim()
   if (!body) return
@@ -48,7 +48,7 @@ export async function staffReplyTicketAction(formData: FormData) {
 }
 
 export async function setTicketStatusAction(formData: FormData) {
-  await requirePermission('clients.view')
+  await requirePermission('clients.edit')
   const ticketId = z.string().uuid().parse(formData.get('ticketId'))
   const status = z.enum(['open', 'in_progress', 'resolved', 'closed']).parse(formData.get('status'))
   await withTenant(async () => {

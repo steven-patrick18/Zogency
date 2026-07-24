@@ -20,14 +20,20 @@ export async function runRenewalSweep(): Promise<number> {
     const due = TRIGGER_DAYS.filter((t) => daysLeft <= t && !already.includes(t))
     if (due.length === 0) continue
 
-    const client = await prisma.client.findUniqueOrThrow({ where: { id: renewal.clientId } })
-    await prisma.renewal.update({
-      where: { id: renewal.id },
+    // CLAIM atomically with optimistic concurrency: advance triggersFired only
+    // if it still equals what we read. A concurrent sweep that already fired
+    // these triggers fails the equality guard (count 0) and this iteration
+    // skips — so outreach notifications/tasks are not duplicated.
+    const claim = await prisma.renewal.updateMany({
+      where: { id: renewal.id, triggersFired: { equals: already as unknown as Prisma.InputJsonValue } },
       data: {
         status: 'in_progress',
         triggersFired: [...already, ...due] as unknown as Prisma.InputJsonValue,
       },
     })
+    if (claim.count === 0) continue
+
+    const client = await prisma.client.findUniqueOrThrow({ where: { id: renewal.clientId } })
     if (client.ownerId) {
       await notify(client.ownerId, 'renewal.due', {
         client: client.name, daysLeft, value: renewal.value.toString(),
@@ -118,16 +124,26 @@ export async function computeHealthScores(): Promise<void> {
           where: { name: 'Sales Manager' }, include: { userRoles: true },
         })
         managers?.userRoles.forEach((ur) => recipients.add(ur.userId))
-        await prisma.churnFlag.create({
-          data: scoped({
-            clientId: client.id,
-            reason: `Health ${band} (score ${score}): payments ${paymentsScore}, approvals ${approvalsScore}`,
-            severity: band === 'red' ? 'high' : 'watch',
-            escalatedTo: [...recipients] as unknown as Prisma.InputJsonValue,
-          }),
-        })
-        for (const userId of recipients) {
-          await notify(userId, 'client.churn_risk', { client: client.name, score, band })
+        // A partial unique index (one unresolved flag per client) makes this
+        // insert the atomic guard; a concurrent sweep loses with P2002.
+        let created = false
+        try {
+          await prisma.churnFlag.create({
+            data: scoped({
+              clientId: client.id,
+              reason: `Health ${band} (score ${score}): payments ${paymentsScore}, approvals ${approvalsScore}`,
+              severity: band === 'red' ? 'high' : 'watch',
+              escalatedTo: [...recipients] as unknown as Prisma.InputJsonValue,
+            }),
+          })
+          created = true
+        } catch (err: unknown) {
+          if ((err as { code?: string }).code !== 'P2002') throw err // already flagged
+        }
+        if (created) {
+          for (const userId of recipients) {
+            await notify(userId, 'client.churn_risk', { client: client.name, score, band })
+          }
         }
       }
     }

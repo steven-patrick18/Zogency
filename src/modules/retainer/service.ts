@@ -19,17 +19,31 @@ export async function runRetainerSweep(): Promise<number> {
   })
   let generated = 0
   for (const r of due) {
-    const invoice = await createInvoice({
-      clientId: r.clientId,
-      projectId: r.projectId,
-      lineItems: [{ description: `${r.description} (monthly retainer)`, rate: Number(r.amount) }],
-    })
-    await prisma.retainerSchedule.update({
-      where: { id: r.id },
+    // Atomically CLAIM this billing period by advancing nextInvoiceOn only if it
+    // still holds the value we read. Concurrent sweeps race on this update; the
+    // loser's count is 0 and it skips, so each period is invoiced exactly once.
+    const claim = await prisma.retainerSchedule.updateMany({
+      where: { id: r.id, active: true, nextInvoiceOn: r.nextInvoiceOn },
       data: { nextInvoiceOn: nextMonth(r.billingDay, r.nextInvoiceOn) },
     })
-    await audit('retainer.invoiced', 'client', r.clientId, null, { invoice: invoice.number, amount: r.amount.toString() })
-    generated++
+    if (claim.count === 0) continue // another worker already billed this period
+
+    try {
+      const invoice = await createInvoice({
+        clientId: r.clientId,
+        projectId: r.projectId,
+        lineItems: [{ description: `${r.description} (monthly retainer)`, rate: Number(r.amount) }],
+      })
+      await audit('retainer.invoiced', 'client', r.clientId, null, { invoice: invoice.number, amount: r.amount.toString() })
+      generated++
+    } catch (err) {
+      // Release the claim so the next sweep retries this period.
+      await prisma.retainerSchedule.updateMany({
+        where: { id: r.id },
+        data: { nextInvoiceOn: r.nextInvoiceOn },
+      })
+      throw err
+    }
   }
   return generated
 }

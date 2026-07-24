@@ -13,14 +13,16 @@ export async function changeLeadStatus(
   leadId: string,
   toStatusId: string,
   comment: string,
+  opts: { allowWon?: boolean } = {},
 ): Promise<StatusChangeResult> {
   const ctx = requireTenantContext()
   const body = comment.trim()
   if (!body) return { ok: false, error: 'A comment is required for every status change (FR-2.7).' }
 
-  const [lead, toStatus] = await Promise.all([
+  const [lead, toStatus, connected] = await Promise.all([
     prisma.lead.findUnique({ where: { id: leadId }, include: { status: true } }),
     prisma.leadStatus.findUnique({ where: { id: toStatusId } }),
+    prisma.leadStatus.findFirst({ where: { name: 'Connected' } }),
   ])
   if (!lead) return { ok: false, error: 'Lead not found' }
   if (!toStatus) return { ok: false, error: 'Unknown status' }
@@ -30,10 +32,22 @@ export async function changeLeadStatus(
     return { ok: false, error: `Lead is ${lead.status.name} — terminal statuses are locked.` }
   }
 
-  // BANT gate (FR-2.10, doc 11 Q7): leaving Connected for any forward status
-  // (not Junk) requires a completed qualification.
+  // Won gate (FR-2.19, doc 04 §7): a lead becomes Won only through the deal
+  // close flow (which enforces the mandatory SoW). Manual moves into a Won
+  // status would bypass that gate, so they are refused here.
+  if (toStatus.isWon && !opts.allowWon) {
+    return {
+      ok: false,
+      error: 'Mark this deal Won from the deal room — closing requires a signed contract and a completed Statement of Work.',
+    }
+  }
+
+  // BANT gate (FR-2.10, doc 11 Q7): advancing a lead PAST the Connected point
+  // requires a completed qualification, regardless of the source status — so a
+  // jump that skips over Connected cannot slip past the gate.
+  const qualifyThreshold = connected?.sort ?? 1
   const isForward = toStatus.sort > lead.status.sort && !toStatus.isJunk
-  if (lead.status.name === 'Connected' && isForward) {
+  if (isForward && toStatus.sort > qualifyThreshold) {
     const bant = await prisma.bantQualification.findUnique({ where: { leadId } })
     if (!bant) {
       return {
@@ -42,9 +56,6 @@ export async function changeLeadStatus(
       }
     }
   }
-
-  // Won gate placeholder: full SoW-mandatory-before-Won lands with deals (S5).
-  // Until then Won is reachable so BRB can practice the flow end to end.
 
   let historyId = ''
   await prisma.$transaction(async (tx) => {

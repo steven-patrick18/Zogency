@@ -31,7 +31,11 @@ const EXPIRING_WINDOW_DAYS = 15
 const DEV_PUBLIC_KEY_B64 = 'MCowBQYDK2VwAyEAO6vaN4mPmujnrUZurK4gB/YK+0TBkdy3BKu8PECD9cY='
 
 function publicKey() {
-  const b64 = process.env.ZOGENCY_LICENSE_PUBLIC_KEY ?? DEV_PUBLIC_KEY_B64
+  const env = process.env.ZOGENCY_LICENSE_PUBLIC_KEY
+  if (!env && process.env.NODE_ENV === 'production') {
+    throw new Error('ZOGENCY_LICENSE_PUBLIC_KEY must be set in production — refusing the dev key.')
+  }
+  const b64 = env ?? DEV_PUBLIC_KEY_B64
   return createPublicKey({ key: Buffer.from(b64, 'base64'), format: 'der', type: 'spki' })
 }
 

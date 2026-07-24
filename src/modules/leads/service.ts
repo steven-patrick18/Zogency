@@ -45,14 +45,12 @@ export async function createLead(input: LeadInput): Promise<CreateLeadResult> {
   const source = await prisma.leadSource.findFirst({ where: { name: input.sourceName } })
   if (!source) return { outcome: 'rejected', reason: `Unknown source "${input.sourceName}"` }
 
-  // Dedupe (FR-1.4): match by phone OR email; merge, never duplicate.
-  const existing = await prisma.lead.findFirst({
-    where: {
-      OR: [...(phone ? [{ phone }] : []), ...(email ? [{ email }] : [])],
-    },
-    include: { status: true },
-  })
-  if (existing) {
+  // Merge a duplicate into an existing lead (FR-1.4): fill blanks only.
+  const mergeInto = async (existingId: string): Promise<CreateLeadResult> => {
+    const existing = await prisma.lead.findUniqueOrThrow({
+      where: { id: existingId },
+      include: { status: true },
+    })
     const merged = await prisma.lead.update({
       where: { id: existing.id },
       data: {
@@ -77,25 +75,49 @@ export async function createLead(input: LeadInput): Promise<CreateLeadResult> {
     return { outcome: 'merged', lead: merged }
   }
 
+  // Dedupe (FR-1.4): match by phone OR email; merge, never duplicate.
+  const existing = await prisma.lead.findFirst({
+    where: {
+      OR: [...(phone ? [{ phone }] : []), ...(email ? [{ email }] : [])],
+    },
+    select: { id: true },
+  })
+  if (existing) return mergeInto(existing.id)
+
   const [newStatus, settings] = await Promise.all([
     prisma.leadStatus.findFirst({ where: { name: 'New' } }),
     prisma.tenantSettings.findFirst(),
   ])
   if (!newStatus) return { outcome: 'rejected', reason: 'No "New" status configured' }
 
-  const lead = await prisma.lead.create({
-    data: scoped({
-      name,
-      phone,
-      email,
-      company: input.company?.trim() || null,
-      city: input.city?.trim() || null,
-      industry: input.industry?.trim() || null,
-      sourceId: source.id,
-      statusId: newStatus.id,
-      slaDueAt: new Date(Date.now() + (settings?.slaHours ?? 24) * 3_600_000),
-    }),
-  })
+  let lead: Lead
+  try {
+    lead = await prisma.lead.create({
+      data: scoped({
+        name,
+        phone,
+        email,
+        company: input.company?.trim() || null,
+        city: input.city?.trim() || null,
+        industry: input.industry?.trim() || null,
+        sourceId: source.id,
+        statusId: newStatus.id,
+        slaDueAt: new Date(Date.now() + (settings?.slaHours ?? 24) * 3_600_000),
+      }),
+    })
+  } catch (err: unknown) {
+    // A concurrent submission won the dedupe race and created the lead between
+    // our findFirst and create (unique on tenant+phone / tenant+email). Merge
+    // into that lead instead of surfacing the P2002 as a failure.
+    if ((err as { code?: string }).code === 'P2002') {
+      const raced = await prisma.lead.findFirst({
+        where: { OR: [...(phone ? [{ phone }] : []), ...(email ? [{ email }] : [])] },
+        select: { id: true },
+      })
+      if (raced) return mergeInto(raced.id)
+    }
+    throw err
+  }
   await audit('lead.create', 'lead', lead.id, null, { name, phone, email, source: input.sourceName })
 
   if (input.ownerId) {
@@ -129,7 +151,13 @@ export async function runAssignmentRules(leadId: string): Promise<string | null>
   return null // unassigned — surfaces in the leads list for manual pickup
 }
 
-/** Least-recently-assigned active user among targets. */
+/**
+ * Least-recently-assigned active user among targets. NOTE: fairness is
+ * eventually-consistent — the pick reads the latest leadAssignment.at, so two
+ * leads created in the same instant can land on the same user before either
+ * assignment row is written. Acceptable for lead distribution (self-corrects on
+ * the next lead); a strict cursor would need a serialized counter per rule.
+ */
 async function pickRoundRobin(targetUserIds: string[]): Promise<string | null> {
   const active = await prisma.user.findMany({
     where: { id: { in: targetUserIds }, status: 'active' },

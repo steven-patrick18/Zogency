@@ -19,7 +19,7 @@ const schema = z.object({
 
 export async function createMeetingAction(_p: MeetingActionState, formData: FormData): Promise<MeetingActionState> {
   const session = await requireSession()
-  await requirePermission('clients.view')
+  await requirePermission('clients.edit')
   const parsed = schema.safeParse(Object.fromEntries(formData))
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' }
   const d = parsed.data
@@ -46,7 +46,7 @@ export async function createMeetingAction(_p: MeetingActionState, formData: Form
 }
 
 export async function summarizeMeetingAction(formData: FormData) {
-  await requirePermission('clients.view')
+  await requirePermission('clients.edit')
   const meetingId = z.string().uuid().parse(formData.get('meetingId'))
   await withTenant(() => summarizeMeeting(meetingId))
   revalidatePath('/meetings')

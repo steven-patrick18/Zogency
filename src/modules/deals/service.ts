@@ -155,6 +155,10 @@ export async function decideApproval(
   const ctx = requireTenantContext()
   const request = await prisma.approvalRequest.findUniqueOrThrow({ where: { id: approvalId } })
   if (request.state !== 'pending') throw new Error('Already decided')
+  // Separation of duties: the requester cannot approve their own request.
+  if (ctx.userId && request.requestedBy === ctx.userId) {
+    throw new Error('You cannot decide your own approval request — it must be actioned by someone else.')
+  }
   await prisma.approvalRequest.update({
     where: { id: approvalId },
     data: { state: decision, approverId: ctx.userId, decisionNote: note ?? null, decidedAt: new Date() },
@@ -227,6 +231,7 @@ export async function recordSignedContract(
       deal.leadId,
       wonStatus.id,
       `Deal won — contract signed (₹${finalValue}). ${input.evidenceNote}`,
+      { allowWon: true },
     )
   }
   await audit('deal.won', 'deal', dealId, { stage: deal.stage }, { stage: 'won', finalValue })

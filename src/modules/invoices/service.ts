@@ -91,8 +91,18 @@ export async function runOverdueSweep(): Promise<number> {
     where: { status: { in: ['pending', 'partial'] }, dueOn: { lt: new Date() } },
     include: { client: true },
   })
+  let swept = 0
   for (const inv of overdue) {
-    await prisma.invoice.update({ where: { id: inv.id }, data: { status: 'overdue' } })
+    // CLAIM the transition atomically: only the sweep that actually flips this
+    // invoice out of pending/partial into overdue logs the reminder and
+    // notifies. A concurrent sweep sees count 0 and skips — no duplicate
+    // reminders.
+    const claim = await prisma.invoice.updateMany({
+      where: { id: inv.id, status: { in: ['pending', 'partial'] }, dueOn: { lt: new Date() } },
+      data: { status: 'overdue' },
+    })
+    if (claim.count === 0) continue
+
     await prisma.paymentReminder.create({
       data: scoped({ invoiceId: inv.id, templateKey: 'invoice.overdue' }),
     })
@@ -107,8 +117,9 @@ export async function runOverdueSweep(): Promise<number> {
         number: inv.number, client: inv.client.name, total: inv.total.toString(),
       })
     }
+    swept++
   }
-  return overdue.length
+  return swept
 }
 
 let lastSweepAt = 0

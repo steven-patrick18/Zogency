@@ -9,6 +9,35 @@ function daysInMonth(year: number, month: number): number {
   return new Date(year, month, 0).getDate()
 }
 
+function isWeekend(d: Date): boolean {
+  const day = d.getDay()
+  return day === 0 || day === 6
+}
+
+/** Working days (Mon–Fri) in a month. */
+export function workingDaysInMonth(year: number, month: number): number {
+  let n = 0
+  const total = daysInMonth(year, month)
+  for (let day = 1; day <= total; day++) {
+    if (!isWeekend(new Date(year, month - 1, day))) n++
+  }
+  return n
+}
+
+/** Working days of a leave request that actually fall inside [monthStart, monthEnd]. */
+export function leaveWorkingDaysInMonth(fromOn: Date, toOn: Date, monthStart: Date, monthEnd: Date): number {
+  const start = fromOn > monthStart ? fromOn : monthStart
+  const end = toOn < monthEnd ? toOn : monthEnd
+  let n = 0
+  const cur = new Date(start.getFullYear(), start.getMonth(), start.getDate())
+  const last = new Date(end.getFullYear(), end.getMonth(), end.getDate())
+  while (cur <= last) {
+    if (!isWeekend(cur)) n++
+    cur.setDate(cur.getDate() + 1)
+  }
+  return n
+}
+
 export async function generatePayrollRun(month: number, year: number): Promise<{ runId: string; slips: number }> {
   const existing = await prisma.payrollRun.findFirst({ where: { periodmonth: month, periodyear: year } })
   if (existing) {
@@ -22,30 +51,36 @@ export async function generatePayrollRun(month: number, year: number): Promise<{
   )
   const monthStart = new Date(year, month - 1, 1)
   const monthEnd = new Date(year, month, 0, 23, 59, 59)
-  const totalDays = daysInMonth(year, month)
+  const workingDays = workingDaysInMonth(year, month)
   let slips = 0
 
   for (const emp of employees) {
     const struct = structures.get(emp.id)
     if (!struct) continue // no salary structure → skip
 
-    // Approved leave days in this month.
+    // Approved leave, clipped to the working days that fall inside this month
+    // (a leave spanning a month boundary must not count its out-of-month days).
     const leaves = await prisma.leaveRequest.findMany({
       where: { employeeId: emp.id, state: 'approved', fromOn: { lte: monthEnd }, toOn: { gte: monthStart } },
     })
-    const leaveDays = leaves.reduce((sum, l) => sum + l.days, 0)
+    const leaveDays = leaves.reduce(
+      (sum, l) => sum + leaveWorkingDaysInMonth(l.fromOn, l.toOn, monthStart, monthEnd),
+      0,
+    )
     const present = await prisma.attendanceRecord.count({
       where: { employeeId: emp.id, date: { gte: monthStart, lte: monthEnd } },
     })
-    // LOP only for employees actively on the attendance system (present>0);
-    // untracked/salaried employees are paid in full rather than penalised for
-    // missing attendance data.
-    const lopDays = present > 0 ? Math.max(0, totalDays - present - leaveDays) : 0
+    // LOP is measured against WORKING days (not calendar days) so weekends are
+    // never deducted. Only for employees actively on the attendance system
+    // (present>0); untracked/salaried employees are paid in full rather than
+    // penalised for missing attendance data.
+    const lopDays = present > 0 ? Math.max(0, workingDays - present - leaveDays) : 0
 
     const basic = Number(struct.basic)
     const allowances = Number(struct.allowances)
     const gross = basic + allowances
-    const perDay = gross / totalDays
+    // Per-day rate is on working days, matching the working-day LOP basis.
+    const perDay = gross / workingDays
     const deductions = Math.round(perDay * lopDays)
     const net = Math.max(0, gross - deductions)
 

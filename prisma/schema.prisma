@@ -1433,6 +1433,9 @@ model ChurnFlag {
   resolvedAt  DateTime? @map("resolved_at")
   createdAt   DateTime  @default(now()) @map("created_at")
 
+  // A partial unique index (one unresolved flag per client) is created in
+  // migration 20260724220000_audit_hardening_uniques — it cannot be expressed
+  // in the Prisma schema DSL (no WHERE on @@unique). Keep them in sync manually.
   @@map("churn_flags")
 }
 
@@ -1724,6 +1727,7 @@ model SlaEscalation {
   escalatedTo Json      @default("[]") @map("escalated_to") // user ids notified
   resolvedAt  DateTime? @map("resolved_at")
 
+  @@unique([tenantId, entityType, entityId, ruleRef])
   @@index([tenantId, entityType, entityId])
   @@map("sla_escalations")
 }

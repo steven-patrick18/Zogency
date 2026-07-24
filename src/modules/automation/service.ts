@@ -52,6 +52,29 @@ export async function emitEvent(event: AutomationEvent): Promise<void> {
   for (const rule of rules) {
     if (!conditionsMatch((rule.conditions as Condition[]) ?? [], event.data)) continue
 
+    // CLAIM FIRST: insert the run row (unique on rule+eventKey) BEFORE running
+    // any action. A concurrent redelivery loses the race with P2002 and skips
+    // entirely, so notifications never fire twice for the same (rule, event).
+    let runId: string
+    try {
+      const run = await prisma.automationRun.create({
+        data: scoped({
+          ruleId: rule.id,
+          eventKey: event.eventKey,
+          triggerEntityType: event.entityType,
+          triggerEntityId: event.entityId,
+          actionsExecuted: [] as Prisma.InputJsonValue,
+          status: 'running',
+          error: null,
+        }),
+      })
+      runId = run.id
+    } catch (err: unknown) {
+      // P2002 → this rule already ran (or is running) for this event — skip.
+      if ((err as { code?: string }).code === 'P2002') continue
+      throw err
+    }
+
     const executed: Array<Record<string, unknown>> = []
     let status = 'success'
     let error: string | null = null
@@ -75,22 +98,10 @@ export async function emitEvent(event: AutomationEvent): Promise<void> {
       error = err instanceof Error ? err.message : String(err)
     }
 
-    try {
-      await prisma.automationRun.create({
-        data: scoped({
-          ruleId: rule.id,
-          eventKey: event.eventKey,
-          triggerEntityType: event.entityType,
-          triggerEntityId: event.entityId,
-          actionsExecuted: executed as Prisma.InputJsonValue,
-          status,
-          error,
-        }),
-      })
-    } catch (err: unknown) {
-      // P2002 → this rule already ran for this event (redelivery) — fine.
-      if ((err as { code?: string }).code !== 'P2002') throw err
-    }
+    await prisma.automationRun.update({
+      where: { id: runId },
+      data: { actionsExecuted: executed as Prisma.InputJsonValue, status, error },
+    })
   }
 }
 
@@ -120,21 +131,24 @@ export async function runSlaSweep(): Promise<number> {
   })
   let escalated = 0
   for (const lead of breached) {
-    const existing = await prisma.slaEscalation.findFirst({
-      where: { entityType: 'lead', entityId: lead.id, ruleRef: 'lead_first_contact_sla' },
-    })
-    if (existing) continue
-
     const managers = await resolveRecipients('role:Sales Manager', {})
     const recipients = [...new Set([...managers, ...(lead.ownerId ? [lead.ownerId] : [])])]
-    await prisma.slaEscalation.create({
-      data: scoped({
-        entityType: 'lead',
-        entityId: lead.id,
-        ruleRef: 'lead_first_contact_sla',
-        escalatedTo: recipients as unknown as Prisma.InputJsonValue,
-      }),
-    })
+    // CLAIM FIRST: the (tenant, entityType, entityId, ruleRef) unique makes the
+    // insert the atomic guard. A concurrent sweep loses with P2002 and skips,
+    // so escalations and their notifications never double-fire.
+    try {
+      await prisma.slaEscalation.create({
+        data: scoped({
+          entityType: 'lead',
+          entityId: lead.id,
+          ruleRef: 'lead_first_contact_sla',
+          escalatedTo: recipients as unknown as Prisma.InputJsonValue,
+        }),
+      })
+    } catch (err: unknown) {
+      if ((err as { code?: string }).code === 'P2002') continue // already escalated
+      throw err
+    }
     for (const userId of recipients) {
       await notify(userId, 'lead.sla_breach', { name: lead.name, ownerId: lead.ownerId })
     }

@@ -38,27 +38,32 @@ export async function POST(req: NextRequest) {
     (entry[0]?.changes as Array<{ value?: { leadgen_id?: string } }>)?.[0]?.value?.leadgen_id ?? '',
   )
 
+  // Route strictly by page id (no "sole tenant" bypass — that would accept a
+  // POST bearing any page id). The matched tenant MUST have an app secret and a
+  // valid X-Hub-Signature-256, otherwise the payload is unauthenticated and
+  // rejected — a webhook with no verifiable signature is never trusted.
   let tenantId: string | null = null
   for (const cred of credentials) {
+    let config: Record<string, string>
     try {
-      const config = decryptJson<Record<string, string>>(cred.configEncrypted)
-      if (config.pageId === pageId || credentials.length === 1) {
-        // Verify signature when the tenant has an app secret configured.
-        if (config.appSecret) {
-          const sig = req.headers.get('x-hub-signature-256') ?? ''
-          const expected =
-            'sha256=' + createHmac('sha256', config.appSecret).update(rawBody).digest('hex')
-          const valid =
-            sig.length === expected.length &&
-            timingSafeEqual(Buffer.from(sig), Buffer.from(expected))
-          if (!valid) return NextResponse.json({ error: 'bad signature' }, { status: 401 })
-        }
-        tenantId = cred.tenantId
-        break
-      }
+      config = decryptJson<Record<string, string>>(cred.configEncrypted)
     } catch {
       continue
     }
+    if (config.pageId !== pageId) continue
+
+    const appSecret = config.appSecret || process.env.META_APP_SECRET
+    if (!appSecret) {
+      return NextResponse.json({ error: 'signature verification not configured' }, { status: 401 })
+    }
+    const sig = req.headers.get('x-hub-signature-256') ?? ''
+    const expected = 'sha256=' + createHmac('sha256', appSecret).update(rawBody).digest('hex')
+    const valid =
+      sig.length === expected.length && timingSafeEqual(Buffer.from(sig), Buffer.from(expected))
+    if (!valid) return NextResponse.json({ error: 'bad signature' }, { status: 401 })
+
+    tenantId = cred.tenantId
+    break
   }
   if (!tenantId) return NextResponse.json({ error: 'unknown page' }, { status: 404 })
 

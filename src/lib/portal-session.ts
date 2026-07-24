@@ -14,8 +14,10 @@ export type PortalSession = {
   exp: number
 }
 
+import { requireSecret } from '@/lib/secret-guard'
+
 function secret(): string {
-  return process.env.AUTH_SECRET ?? 'dev-portal-secret'
+  return requireSecret(process.env.AUTH_SECRET, 'AUTH_SECRET', 'dev-portal-secret')
 }
 
 function sign(payload: string): string {

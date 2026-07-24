@@ -2,8 +2,14 @@
 // Stored format: zgyenc1.<iv b64url>.<authTag b64url>.<ciphertext b64url>
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto'
 
+import { requireSecret } from '@/lib/secret-guard'
+
 function key(): Buffer {
-  const secret = process.env.ZOGENCY_CREDENTIALS_KEY ?? process.env.AUTH_SECRET ?? 'dev-only-fallback'
+  const secret = requireSecret(
+    process.env.ZOGENCY_CREDENTIALS_KEY ?? process.env.AUTH_SECRET,
+    'ZOGENCY_CREDENTIALS_KEY',
+    'dev-only-fallback',
+  )
   return createHash('sha256').update(secret).digest()
 }
 
