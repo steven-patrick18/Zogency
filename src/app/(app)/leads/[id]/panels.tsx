@@ -1,6 +1,7 @@
 'use client'
 
 import { useActionState } from 'react'
+import { logCallAction, type CallFormState } from '@/modules/calls/actions'
 import { reassignLeadAction, saveBantAction, type ActionState } from '@/modules/pipeline/actions'
 
 const field =
@@ -50,6 +51,57 @@ export function BantForm({ leadId, bant }: { leadId: string; bant: Bant }) {
         className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
       >
         {pending ? 'Saving…' : 'Save BANT'}
+      </button>
+    </form>
+  )
+}
+
+export function LogCallForm({ leadId }: { leadId: string }) {
+  const [state, formAction, pending] = useActionState<CallFormState, FormData>(logCallAction, {})
+
+  return (
+    <form action={formAction} className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
+      <div className="flex items-center justify-between">
+        <h2 className="font-semibold text-slate-900">Log a call</h2>
+        <span className="text-[11px] text-slate-400" title="Click-to-call activates when the IVR vendor is connected (doc 11 Q1)">
+          manual fallback
+        </span>
+      </div>
+      <input type="hidden" name="leadId" value={leadId} />
+      <div className="grid grid-cols-2 gap-3">
+        <label className="block text-sm">
+          <span className="mb-1 block font-medium text-slate-700">Direction</span>
+          <select name="direction" defaultValue="outbound" className={field}>
+            <option value="outbound">Outbound</option>
+            <option value="inbound">Inbound</option>
+          </select>
+        </label>
+        <label className="block text-sm">
+          <span className="mb-1 block font-medium text-slate-700">Duration (min)</span>
+          <input name="durationMin" type="number" step="0.5" min="0" className={field} />
+        </label>
+      </div>
+      <label className="block text-sm">
+        <span className="mb-1 block font-medium text-slate-700">Outcome</span>
+        <select name="disposition" required defaultValue="connected" className={field}>
+          <option value="connected">Connected</option>
+          <option value="no_answer">No answer</option>
+          <option value="busy">Busy</option>
+          <option value="wrong_number">Wrong number</option>
+          <option value="callback_requested">Callback requested</option>
+        </select>
+      </label>
+      <label className="block text-sm">
+        <span className="mb-1 block font-medium text-slate-700">Notes</span>
+        <textarea name="outcomeNote" rows={2} className={field} placeholder="What was discussed?" />
+      </label>
+      {state.error && <p className="rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-600">{state.error}</p>}
+      {state.success && <p className="rounded-lg bg-green-500/10 px-3 py-2 text-sm text-green-700">{state.success}</p>}
+      <button
+        disabled={pending}
+        className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
+      >
+        {pending ? 'Logging…' : 'Log call'}
       </button>
     </form>
   )

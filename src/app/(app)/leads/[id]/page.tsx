@@ -3,7 +3,7 @@ import { requirePermission, withTenant } from '@/lib/authz'
 import { prisma } from '@/lib/db/prisma'
 import { getLeadTimeline } from '@/modules/pipeline/service'
 import { StatusChangeModal } from '@/modules/pipeline/status-modal'
-import { BantForm, ReassignForm } from './panels'
+import { BantForm, LogCallForm, ReassignForm } from './panels'
 
 export default async function LeadDetailPage({ params }: { params: Promise<{ id: string }> }) {
   await requirePermission('leads.view')
@@ -83,7 +83,13 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
               <li key={i} className="flex gap-3 text-sm">
                 <span
                   className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${
-                    e.kind === 'status' ? 'bg-indigo-500' : e.kind === 'assignment' ? 'bg-amber-400' : 'bg-slate-300'
+                    e.kind === 'status'
+                      ? 'bg-indigo-500'
+                      : e.kind === 'assignment'
+                        ? 'bg-amber-400'
+                        : e.kind === 'call'
+                          ? 'bg-green-500'
+                          : 'bg-slate-300'
                   }`}
                 />
                 <div>
@@ -100,6 +106,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
       </div>
 
       <div className="col-span-2 space-y-6">
+        <LogCallForm leadId={lead.id} />
         <BantForm leadId={lead.id} bant={bant} />
         <ReassignForm
           leadId={lead.id}

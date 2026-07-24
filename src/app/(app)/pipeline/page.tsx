@@ -2,16 +2,18 @@ import Link from 'next/link'
 import { requirePermission, withTenant } from '@/lib/authz'
 import { prisma } from '@/lib/db/prisma'
 import { StatusChangeModal } from '@/modules/pipeline/status-modal'
+import { maybeRunSlaSweep } from '@/modules/automation/service'
 
 export default async function PipelinePage() {
   await requirePermission('leads.view')
-  const [statuses, leads, users] = await withTenant(() =>
-    Promise.all([
+  const [statuses, leads, users] = await withTenant(async () => {
+    await maybeRunSlaSweep()
+    return Promise.all([
       prisma.leadStatus.findMany({ orderBy: { sort: 'asc' } }),
       prisma.lead.findMany({ where: { archivedAt: null }, orderBy: { createdAt: 'desc' } }),
       prisma.user.findMany({ select: { id: true, name: true } }),
-    ]),
-  )
+    ])
+  })
   const userName = new Map(users.map((u) => [u.id, u.name]))
   const statusOptions = statuses.map((s) => ({
     id: s.id,

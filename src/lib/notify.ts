@@ -28,6 +28,9 @@ export function renderNotification(templateKey: string, payload: Record<string, 
     'license.expiring': (p) => `The workspace license expires on ${p.expiresAt} — renew soon.`,
     'lead.assigned': (p) => `New lead assigned to you: ${p.name}${p.company ? ` (${p.company})` : ''} — contact within SLA.`,
     'lead.reengagement': (p) => `Closed lead "${p.name}" submitted a new enquiry — possible re-engagement.`,
+    'lead.followup_due': (p) => `"${p.name}" moved to Follow-up — schedule the next touchpoint.`,
+    'lead.meeting_scheduled': (p) => `Meeting scheduled with "${p.name}" — prepare discovery notes.`,
+    'lead.sla_breach': (p) => `SLA breached: "${p.name}" has not been contacted within the SLA window.`,
   }
   return templates[templateKey]?.(payload) ?? templateKey
 }

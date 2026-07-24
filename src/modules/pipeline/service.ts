@@ -5,6 +5,7 @@
 import { audit } from '@/lib/audit'
 import { requireTenantContext } from '@/lib/db/context'
 import { prisma, scoped } from '@/lib/db/prisma'
+import { emitEvent } from '@/modules/automation/service'
 
 export type StatusChangeResult = { ok: true } | { ok: false; error: string }
 
@@ -45,6 +46,7 @@ export async function changeLeadStatus(
   // Won gate placeholder: full SoW-mandatory-before-Won lands with deals (S5).
   // Until then Won is reachable so BRB can practice the flow end to end.
 
+  let historyId = ''
   await prisma.$transaction(async (tx) => {
     const commentRow = await tx.comment.create({
       data: scoped({
@@ -54,7 +56,7 @@ export async function changeLeadStatus(
         body,
       }),
     })
-    await tx.leadStatusHistory.create({
+    const history = await tx.leadStatusHistory.create({
       data: scoped({
         leadId,
         fromStatusId: lead.statusId,
@@ -63,6 +65,7 @@ export async function changeLeadStatus(
         actorId: ctx.userId ?? null,
       }),
     })
+    historyId = history.id
     await tx.lead.update({
       where: { id: leadId },
       data: {
@@ -77,22 +80,31 @@ export async function changeLeadStatus(
   })
   await audit('lead.status_change', 'lead', leadId,
     { status: lead.status.name }, { status: toStatus.name, comment: body })
+  // Status-based automation (FR-10.2) — history id keys idempotency.
+  await emitEvent({
+    type: 'status_changed',
+    entityType: 'lead',
+    entityId: leadId,
+    eventKey: historyId,
+    data: { status: toStatus.name, fromStatus: lead.status.name, name: lead.name, ownerId: lead.ownerId },
+  })
   return { ok: true }
 }
 
 export type TimelineEntry = {
   at: Date
-  kind: 'status' | 'comment' | 'assignment'
+  kind: 'status' | 'comment' | 'assignment' | 'call'
   actorId: string | null
   text: string
 }
 
-/** Single chronological timeline (FR-2.9): status changes + comments + assignments. */
+/** Single chronological timeline (FR-2.9): status changes + comments + assignments + calls. */
 export async function getLeadTimeline(leadId: string): Promise<TimelineEntry[]> {
-  const [history, comments, assignments, statuses, users] = await Promise.all([
+  const [history, comments, assignments, calls, statuses, users] = await Promise.all([
     prisma.leadStatusHistory.findMany({ where: { leadId } }),
     prisma.comment.findMany({ where: { entityType: 'lead', entityId: leadId } }),
     prisma.leadAssignment.findMany({ where: { leadId } }),
+    prisma.call.findMany({ where: { leadId } }),
     prisma.leadStatus.findMany(),
     prisma.user.findMany({ select: { id: true, name: true } }),
   ])
@@ -116,6 +128,12 @@ export async function getLeadTimeline(leadId: string): Promise<TimelineEntry[]> 
       kind: 'assignment' as const,
       actorId: a.assignedBy,
       text: `Assigned to ${userName.get(a.assigneeId) ?? 'unknown'}${a.assignedBy ? ` by ${userName.get(a.assignedBy)}` : ' (auto-rule)'}`,
+    })),
+    ...calls.map((c) => ({
+      at: c.startedAt,
+      kind: 'call' as const,
+      actorId: c.userId,
+      text: `${c.direction === 'inbound' ? 'Inbound' : 'Outbound'} call — ${c.disposition ?? 'logged'}${c.durationSec ? `, ${Math.round(c.durationSec / 60)} min` : ''}${c.outcomeNote ? `: ${c.outcomeNote}` : ''}${c.isManualLog ? ' (manual log)' : ''}`,
     })),
   ]
   return entries.sort((a, b) => b.at.getTime() - a.at.getTime())

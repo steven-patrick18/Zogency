@@ -307,6 +307,7 @@ model Lead {
   status        LeadStatus         @relation(fields: [statusId], references: [id])
   statusHistory LeadStatusHistory[]
   assignments   LeadAssignment[]
+  calls         Call[]
 
   // Postgres treats NULLs as distinct — rows without phone/email don't collide.
   @@unique([tenantId, phone])
@@ -380,7 +381,91 @@ model AssignmentRule {
   @@map("assignment_rules")
 }
 
+// ── Calls & SLA (Sprint 4 — FR-2.1–2.5) ────────────────────────────────────
+
+// Append-mostly: created at dial/log time, finalized once with outcome;
+// immutable thereafter (domain-enforced).
+model Call {
+  id              String        @id @default(uuid(7)) @db.Uuid
+  tenantId        String        @map("tenant_id") @db.Uuid
+  leadId          String        @map("lead_id") @db.Uuid
+  userId          String?       @map("user_id") @db.Uuid
+  provider        String        @default("manual") // manual|exotel|myoperator|…
+  providerCallId  String?       @map("provider_call_id")
+  direction       CallDirection @default(outbound)
+  startedAt       DateTime      @map("started_at")
+  durationSec     Int?          @map("duration_sec")
+  disposition     String?       // connected|no_answer|busy|wrong_number|callback_requested
+  outcomeNote     String?       @map("outcome_note")
+  recordingFileId String?       @map("recording_file_id") @db.Uuid
+  isManualLog     Boolean       @default(false) @map("is_manual_log")
+  createdAt       DateTime      @default(now()) @map("created_at")
+
+  lead Lead @relation(fields: [leadId], references: [id])
+
+  @@index([tenantId, leadId, startedAt])
+  @@map("calls")
+}
+
+// Append-only breach log (FR-2.5, FR-10.4); resolvedAt is the one pointer field.
+model SlaEscalation {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  entityType  String    @map("entity_type")
+  entityId    String    @map("entity_id") @db.Uuid
+  ruleRef     String    @map("rule_ref") // e.g. lead_first_contact_sla
+  breachedAt  DateTime  @default(now()) @map("breached_at")
+  escalatedTo Json      @default("[]") @map("escalated_to") // user ids notified
+  resolvedAt  DateTime? @map("resolved_at")
+
+  @@index([tenantId, entityType, entityId])
+  @@map("sla_escalations")
+}
+
+// ── Automation engine (Sprint 4 — FR-10.1–10.4 core) ───────────────────────
+
+model AutomationRule {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  name        String
+  triggerType String   @map("trigger_type") // record_created|status_changed|sla_breach|date_reached
+  entityType  String   @map("entity_type") // lead|task|invoice|…
+  conditions  Json     @default("[]") // [{field, op, value}]
+  actions     Json     @default("[]") // [{type:'notify', to:'owner'|'role:X', template}]
+  enabled     Boolean  @default(true)
+  runOrder    Int      @default(0) @map("run_order")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  runs AutomationRun[]
+
+  @@map("automation_rules")
+}
+
+// Append-only execution log; eventKey enforces idempotency per rule+event.
+model AutomationRun {
+  id                String   @id @default(uuid(7)) @db.Uuid
+  tenantId          String   @map("tenant_id") @db.Uuid
+  ruleId            String   @map("rule_id") @db.Uuid
+  eventKey          String   @map("event_key")
+  triggerEntityType String   @map("trigger_entity_type")
+  triggerEntityId   String   @map("trigger_entity_id") @db.Uuid
+  actionsExecuted   Json     @default("[]") @map("actions_executed")
+  status            String   @default("success") // success|partial|failed
+  error             String?
+  at                DateTime @default(now())
+
+  rule AutomationRule @relation(fields: [ruleId], references: [id])
+
+  @@unique([tenantId, ruleId, eventKey])
+  @@map("automation_runs")
+}
+
 // ── Enums ──────────────────────────────────────────────────────────────────
+
+enum CallDirection {
+  inbound
+  outbound
+}
 
 enum TenantStatus {
   active

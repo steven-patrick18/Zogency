@@ -191,6 +191,51 @@ async function main() {
     })
   }
 
+  // Seeded automation rules (doc 08 §3, FR-10.2). WhatsApp/email actions
+  // attach when MessagingPort/EmailPort are connected — notify runs in-app now.
+  const AUTOMATION_RULES = [
+    {
+      name: 'Follow-up reminder',
+      triggerType: 'status_changed',
+      entityType: 'lead',
+      conditions: [{ field: 'status', op: 'eq', value: 'Follow-up' }],
+      actions: [{ type: 'notify', to: 'owner', template: 'lead.followup_due' }],
+    },
+    {
+      name: 'Meeting scheduled reminder',
+      triggerType: 'status_changed',
+      entityType: 'lead',
+      conditions: [{ field: 'status', op: 'eq', value: 'Meeting Scheduled' }],
+      actions: [{ type: 'notify', to: 'owner', template: 'lead.meeting_scheduled' }],
+    },
+    {
+      name: 'SLA breach — escalate to Sales Manager',
+      triggerType: 'sla_breach',
+      entityType: 'lead',
+      conditions: [],
+      actions: [{ type: 'notify', to: 'role:Sales Manager', template: 'lead.sla_breach' }],
+    },
+  ]
+  for (const rule of AUTOMATION_RULES) {
+    const existing = await prisma.automationRule.findFirst({
+      where: { tenantId: tenant.id, name: rule.name },
+    })
+    if (!existing) {
+      await prisma.automationRule.create({ data: { tenantId: tenant.id, ...rule } })
+    }
+  }
+
+  // Dev IVR webhook key (vendor pending — doc 11 Q1).
+  await prisma.integrationCredential.upsert({
+    where: { tenantId_provider: { tenantId: tenant.id, provider: 'ivr' } },
+    update: {},
+    create: {
+      tenantId: tenant.id,
+      provider: 'ivr',
+      configEncrypted: JSON.stringify({ key: 'brb-ivr-dev-key' }),
+    },
+  })
+
   // Website-form intake key (doc 09 §2.3) — per-tenant credential.
   await prisma.integrationCredential.upsert({
     where: { tenantId_provider: { tenantId: tenant.id, provider: 'website_form' } },
