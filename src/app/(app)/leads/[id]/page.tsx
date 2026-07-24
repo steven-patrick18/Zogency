@@ -15,16 +15,17 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
       include: { source: true, status: true },
     })
     if (!lead) return null
-    const [statuses, users, bant, timeline] = await Promise.all([
+    const [statuses, users, bant, timeline, deal] = await Promise.all([
       prisma.leadStatus.findMany({ orderBy: { sort: 'asc' } }),
       prisma.user.findMany({ where: { status: 'active' }, select: { id: true, name: true } }),
       prisma.bantQualification.findUnique({ where: { leadId: id } }),
       getLeadTimeline(id),
+      prisma.deal.findUnique({ where: { leadId: id } }),
     ])
-    return { lead, statuses, users, bant, timeline }
+    return { lead, statuses, users, bant, timeline, deal }
   })
   if (!data) notFound()
-  const { lead, statuses, users, bant, timeline } = data
+  const { lead, statuses, users, bant, timeline, deal } = data
   const userName = new Map(users.map((u) => [u.id, u.name]))
 
   return (
@@ -106,6 +107,21 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
       </div>
 
       <div className="col-span-2 space-y-6">
+        {deal && (
+          <a
+            href={`/deals/${deal.id}`}
+            className="flex items-center justify-between rounded-xl border border-indigo-200 bg-indigo-50 p-5 hover:bg-indigo-100"
+          >
+            <div>
+              <h2 className="font-semibold text-indigo-900">Deal room</h2>
+              <p className="text-xs text-indigo-600">
+                {deal.stage.replace('_', ' ')}
+                {deal.value ? ` · ₹${Number(deal.value).toLocaleString('en-IN')}` : ''}
+              </p>
+            </div>
+            <span className="text-indigo-600">→</span>
+          </a>
+        )}
         <LogCallForm leadId={lead.id} />
         <BantForm leadId={lead.id} bant={bant} />
         <ReassignForm

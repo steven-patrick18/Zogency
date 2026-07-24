@@ -6,6 +6,7 @@ import { audit } from '@/lib/audit'
 import { requirePermission, withTenant } from '@/lib/authz'
 import { prisma, scoped } from '@/lib/db/prisma'
 import { assignLead } from '@/modules/leads/service'
+import { ensureDealForLead } from '@/modules/deals/service'
 import { changeLeadStatus } from './service'
 
 export type ActionState = { error?: string; success?: string }
@@ -56,9 +57,11 @@ export async function saveBantAction(_prev: ActionState, formData: FormData): Pr
       })
     }
     await audit('lead.bant_saved', 'lead', leadId, null, fields)
+    // Qualification complete → the deal record opens (ADR-004).
+    await ensureDealForLead(leadId)
   })
   revalidatePath(`/leads/${leadId}`)
-  return { success: 'BANT qualification saved' }
+  return { success: 'BANT qualification saved — deal opened' }
 }
 
 const reassignSchema = z.object({

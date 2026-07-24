@@ -31,6 +31,8 @@ export function renderNotification(templateKey: string, payload: Record<string, 
     'lead.followup_due': (p) => `"${p.name}" moved to Follow-up — schedule the next touchpoint.`,
     'lead.meeting_scheduled': (p) => `Meeting scheduled with "${p.name}" — prepare discovery notes.`,
     'lead.sla_breach': (p) => `SLA breached: "${p.name}" has not been contacted within the SLA window.`,
+    'approval.requested': (p) => `Approval needed: ${p.summary}`,
+    'approval.decided': (p) => `Your approval request was ${p.decision}: ${p.summary}`,
   }
   return templates[templateKey]?.(payload) ?? templateKey
 }

@@ -225,6 +225,27 @@ async function main() {
     }
   }
 
+  // Proposal templates per service line (FR-2.12) — Admin-editable.
+  const PROPOSAL_TEMPLATES = [
+    ['Social Media Management', 'Social Media Retainer'],
+    ['Performance Marketing', 'Performance Marketing Retainer'],
+    ['Web Development', 'Website Design & Development'],
+    ['SEO', 'SEO Retainer'],
+    ['Branding', 'Brand Identity Package'],
+  ]
+  for (const [serviceLine, name] of PROPOSAL_TEMPLATES) {
+    await prisma.proposalTemplate.upsert({
+      where: { tenantId_name: { tenantId: tenant.id, name } },
+      update: {},
+      create: {
+        tenantId: tenant.id,
+        serviceLine,
+        name,
+        body: `Scope, deliverables, timelines and commercial terms for ${serviceLine}. (Edit in Settings once template editor ships.)`,
+      },
+    })
+  }
+
   // Dev IVR webhook key (vendor pending — doc 11 Q1).
   await prisma.integrationCredential.upsert({
     where: { tenantId_provider: { tenantId: tenant.id, provider: 'ivr' } },

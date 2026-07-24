@@ -72,6 +72,7 @@ model TenantSettings {
   revisionRoundDefault Int     @default(2) @map("revision_round_default")
   featureFlags         Json    @default("{}") @map("feature_flags")
   licenseKey           String? @map("license_key")
+  maxDiscountPercent   Int     @default(10) @map("max_discount_percent") // doc 11 Q10 — BRB's matrix values pending
   updatedAt            DateTime @updatedAt @map("updated_at")
 
   tenant Tenant @relation(fields: [tenantId], references: [id])
@@ -308,6 +309,7 @@ model Lead {
   statusHistory LeadStatusHistory[]
   assignments   LeadAssignment[]
   calls         Call[]
+  deal          Deal?
 
   // Postgres treats NULLs as distinct — rows without phone/email don't collide.
   @@unique([tenantId, phone])
@@ -379,6 +381,140 @@ model AssignmentRule {
   createdAt     DateTime @default(now()) @map("created_at")
 
   @@map("assignment_rules")
+}
+
+// ── Deals & proposals (Sprint 5 — FR-2.11–2.18, ADR-004) ───────────────────
+
+// Created when BANT qualification completes; carries value/forecast/stage.
+model Deal {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
+  leadId         String    @unique @map("lead_id") @db.Uuid
+  ownerId        String?   @map("owner_id") @db.Uuid
+  stage          DealStage @default(open)
+  value          Decimal?  @db.Decimal(12, 2)
+  currency       String    @default("INR") @db.Char(3)
+  expectedCloseOn DateTime? @map("expected_close_on") @db.Date
+  lostReason     String?   @map("lost_reason")
+  wonAt          DateTime? @map("won_at")
+  finalTerms     Json?     @map("final_terms")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  lead           Lead            @relation(fields: [leadId], references: [id])
+  discoveryNotes DiscoveryNote[]
+  proposals      Proposal[]
+  contract       Contract?
+
+  @@index([tenantId, stage])
+  @@map("deals")
+}
+
+// Append-only structured discovery log (FR-2.11, SOP step 6).
+model DiscoveryNote {
+  id                 String   @id @default(uuid(7)) @db.Uuid
+  tenantId           String   @map("tenant_id") @db.Uuid
+  dealId             String   @map("deal_id") @db.Uuid
+  businessChallenges String   @map("business_challenges")
+  requirements       String
+  budgetNotes        String?  @map("budget_notes")
+  decisionTimeline   String?  @map("decision_timeline")
+  authorId           String?  @map("author_id") @db.Uuid
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  deal Deal @relation(fields: [dealId], references: [id])
+
+  @@map("discovery_notes")
+}
+
+// Reusable per-service-line templates (FR-2.12), Admin-editable.
+model ProposalTemplate {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  serviceLine String   @map("service_line")
+  name        String
+  body        String   @default("")
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@unique([tenantId, name])
+  @@map("proposal_templates")
+}
+
+model Proposal {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  dealId         String   @map("deal_id") @db.Uuid
+  templateId     String?  @map("template_id") @db.Uuid
+  status         String   @default("draft") // draft|sent|accepted
+  currentVersion Int      @default(0) @map("current_version")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  deal     Deal              @relation(fields: [dealId], references: [id])
+  versions ProposalVersion[]
+
+  @@map("proposals")
+}
+
+// Append-only version trail (FR-2.14/2.15): every revision is a new row.
+model ProposalVersion {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  proposalId String    @map("proposal_id") @db.Uuid
+  versionNo  Int       @map("version_no")
+  listAmount Decimal?  @map("list_amount") @db.Decimal(12, 2)
+  amount     Decimal   @db.Decimal(12, 2)
+  changeNote String    @map("change_note")
+  sentAt     DateTime? @map("sent_at")
+  sentBy     String?   @map("sent_by") @db.Uuid
+  createdBy  String?   @map("created_by") @db.Uuid
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  proposal Proposal @relation(fields: [proposalId], references: [id])
+
+  @@unique([tenantId, proposalId, versionNo])
+  @@map("proposal_versions")
+}
+
+// Generic approval workflow (doc 03 §5.2) — reused by discount (FR-2.13),
+// marketing brief/budget/creative (FR-3.x), HR requisition/compensation (FR-4.x).
+model ApprovalRequest {
+  id           String    @id @default(uuid(7)) @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+  type         String    // discount|budget|brief|creative_internal|requisition|compensation
+  entityType   String    @map("entity_type")
+  entityId     String    @map("entity_id") @db.Uuid
+  summary      String    @default("")
+  requestedBy  String    @map("requested_by") @db.Uuid
+  approverId   String?   @map("approver_id") @db.Uuid
+  state        String    @default("pending") // pending|approved|rejected
+  decisionNote String?   @map("decision_note")
+  requestedAt  DateTime  @default(now()) @map("requested_at")
+  decidedAt    DateTime? @map("decided_at")
+
+  @@index([tenantId, state, type])
+  @@index([tenantId, entityType, entityId])
+  @@map("approval_requests")
+}
+
+// Contract / e-sign record (FR-2.17). Provider 'logged' = written-approval
+// fallback until the e-sign vendor is connected (doc 11 Q2).
+model Contract {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
+  dealId         String    @unique @map("deal_id") @db.Uuid
+  provider       String    @default("logged") // logged|zoho_sign|docusign
+  envelopeId     String?   @map("envelope_id")
+  status         String    @default("draft") // draft|sent|signed|declined
+  signedAt       DateTime? @map("signed_at")
+  evidenceNote   String?   @map("evidence_note")
+  documentFileId String?   @map("document_file_id") @db.Uuid
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  deal Deal @relation(fields: [dealId], references: [id])
+
+  @@map("contracts")
 }
 
 // ── Calls & SLA (Sprint 4 — FR-2.1–2.5) ────────────────────────────────────
@@ -465,6 +601,13 @@ model AutomationRun {
 enum CallDirection {
   inbound
   outbound
+}
+
+enum DealStage {
+  open
+  verbal_commit
+  won
+  lost
 }
 
 enum TenantStatus {

@@ -25,6 +25,13 @@ export const TENANT_SCOPED_MODELS = new Set([
   'SlaEscalation',
   'AutomationRule',
   'AutomationRun',
+  'Deal',
+  'DiscoveryNote',
+  'ProposalTemplate',
+  'Proposal',
+  'ProposalVersion',
+  'ApprovalRequest',
+  'Contract',
 ])
 
 /** Platform-level models with no tenant_id — only reachable via prismaUnscoped. */
