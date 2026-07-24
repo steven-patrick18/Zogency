@@ -36,13 +36,15 @@ const LICENSE_BANNERS: Record<string, { text: string; cls: string }> = {
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await requireSession()
-  const [license, unreadCount] = await withTenant(async () =>
+  const [license, unreadCount, me] = await withTenant(async () =>
     Promise.all([
       getWorkspaceLicense(),
       prisma.notification.count({ where: { userId: session.user.id, readAt: null } }),
+      prisma.user.findUnique({ where: { id: session.user.id }, select: { avatar: true } }),
     ]),
   )
   const banner = LICENSE_BANNERS[license.state]
+  const sidebarAvatar = me?.avatar ?? null
 
   return (
     <div className="flex min-h-screen bg-slate-100">
@@ -72,12 +74,22 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             ),
           )}
         </nav>
-        <div className="border-t border-slate-800 px-5 py-4">
+        <div className="flex items-start gap-3 border-t border-slate-800 px-5 py-4">
+          {sidebarAvatar ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={sidebarAvatar} alt="" className="h-9 w-9 shrink-0 rounded-full object-cover" />
+          ) : (
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-xs font-bold text-white">
+              {session.user.name?.split(/\s+/).map((p) => p[0]).slice(0, 2).join('').toUpperCase()}
+            </div>
+          )}
+          <div className="min-w-0">
           <p className="truncate text-sm font-medium text-white">{session.user.name}</p>
           <p className="truncate text-xs text-slate-400">{session.user.roles.join(', ')}</p>
           <form action={logoutAction} className="mt-3">
             <button className="text-xs font-medium text-slate-400 hover:text-white">Sign out</button>
           </form>
+          </div>
         </div>
       </aside>
       <div className="flex flex-1 flex-col">

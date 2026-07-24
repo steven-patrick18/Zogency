@@ -1,6 +1,20 @@
+import Link from 'next/link'
 import { withTenant } from '@/lib/authz'
 import { prisma } from '@/lib/db/prisma'
 import { createUser, toggleUserStatus } from '@/modules/users/actions'
+
+function Avatar({ avatar, name }: { avatar: string | null; name: string }) {
+  if (avatar) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={avatar} alt={name} className="h-8 w-8 rounded-full object-cover" />
+  }
+  const initials = name.split(/\s+/).map((p) => p[0]).slice(0, 2).join('').toUpperCase()
+  return (
+    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-600">
+      {initials}
+    </div>
+  )
+}
 
 const field =
   'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none'
@@ -32,7 +46,17 @@ export default async function UsersPage() {
           <tbody className="divide-y divide-slate-100">
             {users.map((u) => (
               <tr key={u.id}>
-                <td className="px-4 py-3 font-medium text-slate-900">{u.name}</td>
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <Avatar avatar={u.avatar} name={u.name} />
+                    <Link
+                      href={`/settings/users/${u.id}`}
+                      className="font-medium text-slate-900 hover:text-indigo-600"
+                    >
+                      {u.name}
+                    </Link>
+                  </div>
+                </td>
                 <td className="px-4 py-3 text-slate-600">{u.email}</td>
                 <td className="px-4 py-3 text-slate-600">
                   {u.userRoles.map((ur) => ur.role.name).join(', ')}
@@ -49,12 +73,20 @@ export default async function UsersPage() {
                   </span>
                 </td>
                 <td className="px-4 py-3 text-right">
-                  <form action={toggleUserStatus}>
-                    <input type="hidden" name="userId" value={u.id} />
-                    <button className="text-xs font-medium text-indigo-600 hover:underline">
-                      {u.status === 'active' ? 'Disable' : 'Enable'}
-                    </button>
-                  </form>
+                  <div className="flex items-center justify-end gap-3">
+                    <Link
+                      href={`/settings/users/${u.id}`}
+                      className="text-xs font-medium text-indigo-600 hover:underline"
+                    >
+                      Edit
+                    </Link>
+                    <form action={toggleUserStatus}>
+                      <input type="hidden" name="userId" value={u.id} />
+                      <button className="text-xs font-medium text-slate-500 hover:underline">
+                        {u.status === 'active' ? 'Disable' : 'Enable'}
+                      </button>
+                    </form>
+                  </div>
                 </td>
               </tr>
             ))}

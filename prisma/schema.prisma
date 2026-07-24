@@ -88,6 +88,7 @@ model User {
   phone        String?
   passwordHash String     @map("password_hash")
   totpSecret   String?    @map("totp_secret")
+  avatar       String?    // data-URI in dev; object-storage URL after the DO deploy
   status       UserStatus @default(active)
   lastLoginAt  DateTime?  @map("last_login_at")
   createdAt    DateTime   @default(now()) @map("created_at")

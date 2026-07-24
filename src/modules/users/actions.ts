@@ -68,6 +68,98 @@ export async function setUserRoles(formData: FormData) {
   revalidatePath('/settings/users')
 }
 
+const updateUserSchema = z.object({
+  userId: z.string().uuid(),
+  name: z.string().min(1).max(100),
+  email: z.string().email(),
+  phone: z.string().max(20).optional().or(z.literal('')),
+})
+
+export async function updateUserAction(
+  _prev: { error?: string; success?: string },
+  formData: FormData,
+): Promise<{ error?: string; success?: string }> {
+  await requirePermission('users.manage')
+  const parsed = updateUserSchema.safeParse(Object.fromEntries(formData))
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' }
+  const { userId, name, email, phone } = parsed.data
+
+  try {
+    await withTenant(async () => {
+      const before = await prisma.user.findUniqueOrThrow({ where: { id: userId } })
+      await prisma.user.update({
+        where: { id: userId },
+        data: { name, email: email.toLowerCase(), phone: phone || null },
+      })
+      await audit('user.update', 'user', userId,
+        { name: before.name, email: before.email, phone: before.phone },
+        { name, email: email.toLowerCase(), phone: phone || null })
+    })
+  } catch (err: unknown) {
+    if ((err as { code?: string }).code === 'P2002') {
+      return { error: 'That email is already used by another team member' }
+    }
+    throw err
+  }
+  revalidatePath('/settings/users')
+  revalidatePath(`/settings/users/${userId}`)
+  return { success: 'Profile updated' }
+}
+
+export async function resetPasswordAction(
+  _prev: { error?: string; success?: string },
+  formData: FormData,
+): Promise<{ error?: string; success?: string }> {
+  await requirePermission('users.manage')
+  const userId = z.string().uuid().parse(formData.get('userId'))
+  const password = String(formData.get('password') ?? '')
+  if (password.length < 8) return { error: 'Password must be at least 8 characters' }
+
+  await withTenant(async () => {
+    await prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash: await bcrypt.hash(password, 12) },
+    })
+    // Never log the password — the event is what matters.
+    await audit('user.password_reset', 'user', userId, null, { byAdmin: true })
+  })
+  revalidatePath(`/settings/users/${userId}`)
+  return { success: 'Password updated — share it with the user securely' }
+}
+
+const AVATAR_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'])
+const AVATAR_MAX_BYTES = 300_000
+
+export async function uploadAvatarAction(
+  _prev: { error?: string; success?: string },
+  formData: FormData,
+): Promise<{ error?: string; success?: string }> {
+  await requirePermission('users.manage')
+  const userId = z.string().uuid().parse(formData.get('userId'))
+  const file = formData.get('avatar')
+  if (!(file instanceof File) || file.size === 0) return { error: 'Choose an image' }
+  if (!AVATAR_TYPES.has(file.type)) return { error: 'Use a PNG, JPEG, or WebP image' }
+  if (file.size > AVATAR_MAX_BYTES) return { error: 'Image too large — max 300 KB (crop/resize it first)' }
+
+  const dataUri = `data:${file.type};base64,${Buffer.from(await file.arrayBuffer()).toString('base64')}`
+  await withTenant(async () => {
+    await prisma.user.update({ where: { id: userId }, data: { avatar: dataUri } })
+    await audit('user.avatar_set', 'user', userId, null, { size: file.size, type: file.type })
+  })
+  revalidatePath(`/settings/users/${userId}`)
+  revalidatePath('/settings/users')
+  revalidatePath('/', 'layout')
+  return { success: 'Photo updated' }
+}
+
+export async function removeAvatarAction(formData: FormData) {
+  await requirePermission('users.manage')
+  const userId = z.string().uuid().parse(formData.get('userId'))
+  await withTenant(() => prisma.user.update({ where: { id: userId }, data: { avatar: null } }))
+  revalidatePath(`/settings/users/${userId}`)
+  revalidatePath('/settings/users')
+}
+
 export async function toggleUserStatus(formData: FormData) {
   const session = await requirePermission('users.manage')
   const userId = z.string().uuid().parse(formData.get('userId'))
