@@ -76,10 +76,17 @@ async function main() {
     })
   }
 
+  // Self-hosted installs override these (deploy/install.sh writes SEED_* envs).
+  const tenantName = process.env.SEED_TENANT_NAME ?? 'BRB Digital'
+  const tenantSlug = process.env.SEED_TENANT_SLUG ?? 'brb'
+  const adminEmail = (process.env.SEED_ADMIN_EMAIL ?? 'admin@brb.digital').toLowerCase()
+  const adminName = process.env.SEED_ADMIN_NAME ?? 'BRB Admin'
+  const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? 'Admin@123'
+
   const tenant = await prisma.tenant.upsert({
-    where: { slug: 'brb' },
+    where: { slug: tenantSlug },
     update: {},
-    create: { name: 'BRB Digital', slug: 'brb' },
+    create: { name: tenantName, slug: tenantSlug },
   })
 
   await prisma.tenantSettings.upsert({
@@ -120,13 +127,13 @@ async function main() {
     where: { tenantId_name: { tenantId: tenant.id, name: 'Admin' } },
   })
   const admin = await prisma.user.upsert({
-    where: { tenantId_email: { tenantId: tenant.id, email: 'admin@brb.digital' } },
+    where: { tenantId_email: { tenantId: tenant.id, email: adminEmail } },
     update: {},
     create: {
       tenantId: tenant.id,
-      name: 'BRB Admin',
-      email: 'admin@brb.digital',
-      passwordHash: await bcrypt.hash('Admin@123', 12),
+      name: adminName,
+      email: adminEmail,
+      passwordHash: await bcrypt.hash(adminPassword, 12),
     },
   })
   await prisma.userRole.upsert({
@@ -283,7 +290,7 @@ async function main() {
     },
   })
 
-  console.log(`Seeded tenant "${tenant.name}" (${tenant.slug}) with ${PERMISSIONS.length} permissions, ${Object.keys(ROLES).length} roles, ${DEPARTMENTS.length} departments, ${LEAD_STATUSES.length} lead statuses, ${LEAD_SOURCES.length} sources, admin admin@brb.digital / Admin@123`)
+  console.log(`Seeded tenant "${tenant.name}" (${tenant.slug}) with ${PERMISSIONS.length} permissions, ${Object.keys(ROLES).length} roles, ${DEPARTMENTS.length} departments, ${LEAD_STATUSES.length} lead statuses, ${LEAD_SOURCES.length} sources, admin ${adminEmail}`)
 }
 
 main().finally(() => prisma.$disconnect())

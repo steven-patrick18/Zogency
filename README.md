@@ -33,3 +33,9 @@ Next.js (App Router, TypeScript) · PostgreSQL + Prisma (`tenant_id` row isolati
 🔨 **Phase 2 in progress** — marketing campaign chain (brief → sign-off → planning → creative → client approvals → launch → KPIs → closure). Still pending: [doc 11](docs/11-open-questions-and-risks.md) vendor decisions (IVR, e-sign, accounting) and BRB sign-off.
 
 **Dev quickstart:** PostgreSQL 15 + Node 20+; `cp .env.example .env`, `npm install`, `npx prisma migrate dev`, `npx tsx prisma/seed.ts`, `npm run dev` → login `admin@brb.digital` / `Admin@123`.
+
+**Self-hosted install (client servers):** one command on a fresh Ubuntu VPS — see [docs/12-self-hosted-install.md](docs/12-self-hosted-install.md):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/steven-patrick18/Zogency/main/deploy/install.sh | sudo bash
+```

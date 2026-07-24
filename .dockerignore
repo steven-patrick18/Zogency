@@ -1,0 +1,10 @@
+node_modules
+.next
+.git
+.env
+.env.*
+!.env.example
+docs
+*.pdf
+prisma/migrations/**/README*
+.claude
