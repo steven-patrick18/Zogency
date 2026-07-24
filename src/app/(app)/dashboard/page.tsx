@@ -21,7 +21,7 @@ export default async function DashboardPage() {
         {tenant?.name ?? 'Workspace'} — Dashboard
       </h1>
       <p className="mt-1 text-sm text-slate-500">
-        Welcome back, {session.user.name}. Sprint 1 platform core is live; Leads land in Sprint 2.
+        Welcome back, {session.user.name}. Leads and the 7-status pipeline are live.
       </p>
       <div className="mt-6 grid max-w-2xl grid-cols-3 gap-4">
         {stats.map((s) => (

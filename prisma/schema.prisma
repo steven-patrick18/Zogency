@@ -350,6 +350,22 @@ model LeadAssignment {
   @@map("lead_assignments")
 }
 
+// BANT qualification (FR-2.10) — gate before a lead leaves Connected (doc 11 Q7).
+model BantQualification {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  leadId      String   @unique @map("lead_id") @db.Uuid
+  budgetRange String   @map("budget_range")
+  authority   String   // decision-maker name/role
+  need        String
+  timeline    String
+  qualifiedBy String?  @map("qualified_by") @db.Uuid
+  qualifiedAt DateTime @default(now()) @map("qualified_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("bant_qualifications")
+}
+
 model AssignmentRule {
   id            String   @id @default(uuid(7)) @db.Uuid
   tenantId      String   @map("tenant_id") @db.Uuid

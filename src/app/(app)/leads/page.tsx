@@ -66,7 +66,9 @@ export default async function LeadsPage() {
               return (
                 <tr key={l.id} className="hover:bg-slate-50">
                   <td className="px-4 py-3">
-                    <p className="font-medium text-slate-900">{l.name}</p>
+                    <Link href={`/leads/${l.id}`} className="font-medium text-slate-900 hover:text-indigo-600">
+                      {l.name}
+                    </Link>
                     {l.company && <p className="text-xs text-slate-500">{l.company}</p>}
                   </td>
                   <td className="px-4 py-3 text-slate-600">

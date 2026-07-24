@@ -8,7 +8,7 @@ import { getWorkspaceLicense } from '@/modules/settings/service'
 const NAV: Array<{ label: string; href?: string; sprint?: string }> = [
   { label: 'Dashboard', href: '/dashboard' },
   { label: 'Leads', href: '/leads' },
-  { label: 'Pipeline', sprint: 'S3' },
+  { label: 'Pipeline', href: '/pipeline' },
   { label: 'Clients', sprint: 'S6' },
   { label: 'Campaigns', sprint: 'P2' },
   { label: 'Tasks', sprint: 'S6' },
