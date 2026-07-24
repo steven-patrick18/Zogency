@@ -1328,10 +1328,25 @@ model VendorClient {
   installLog       String    @default("") @map("install_log")
   setupLink        String?   @map("setup_link")
   installedAt      DateTime? @map("installed_at")
+  lastSeenVersion  String?   @map("last_seen_version") // git sha reported by the client updater
+  lastCheckinAt    DateTime? @map("last_checkin_at")
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")
 
   @@map("vendor_clients")
+}
+
+// Published update releases — client servers poll /api/vendor/release and
+// self-update to the latest published ref ("update from my panel").
+model VendorRelease {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  ref         String   @default("main") // git branch or pinned commit sha
+  notes       String   @default("")
+  publishedBy String?  @map("published_by") @db.Uuid
+  publishedAt DateTime @default(now()) @map("published_at")
+
+  @@map("vendor_releases")
 }
 
 // ── Retention & renewal (Phase 2 — FR-7.1–7.6, doc 07 §5) ───────────────────

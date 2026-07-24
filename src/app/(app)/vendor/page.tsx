@@ -5,7 +5,7 @@ import { requirePermission, withTenant } from '@/lib/authz'
 import { prisma } from '@/lib/db/prisma'
 import { issuerConfigured } from '@/lib/license-issuer'
 import { vendorModeEnabled } from '@/modules/vendor/config'
-import { NewClientForm, RetryForm } from './vendor-panels'
+import { NewClientForm, PublishReleaseForm, RetryForm } from './vendor-panels'
 
 const STATUS_STYLES: Record<string, string> = {
   pending: 'bg-slate-200 text-slate-600',
@@ -17,8 +17,11 @@ const STATUS_STYLES: Record<string, string> = {
 export default async function VendorPage() {
   if (!vendorModeEnabled()) notFound()
   await requirePermission('settings.manage')
-  const clients = await withTenant(() =>
-    prisma.vendorClient.findMany({ orderBy: { createdAt: 'desc' } }),
+  const [clients, latestRelease] = await withTenant(() =>
+    Promise.all([
+      prisma.vendorClient.findMany({ orderBy: { createdAt: 'desc' } }),
+      prisma.vendorRelease.findFirst({ orderBy: { publishedAt: 'desc' } }),
+    ]),
   )
 
   return (
@@ -34,6 +37,27 @@ export default async function VendorPage() {
           enable license issuing.
         </p>
       )}
+
+      <div className="mt-6 rounded-xl border border-slate-200 bg-white p-5">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="font-semibold text-slate-900">Updates</h2>
+            <p className="text-xs text-slate-500">
+              This master updates from git. Client installs poll this panel&apos;s release channel
+              every 30 minutes and update themselves to the published version.
+            </p>
+          </div>
+          {latestRelease && (
+            <div className="text-right text-xs text-slate-500">
+              <p>
+                Published: <span className="font-mono font-medium text-slate-800">{latestRelease.ref}</span>
+              </p>
+              <p>{latestRelease.publishedAt.toLocaleString()}</p>
+            </div>
+          )}
+        </div>
+        <PublishReleaseForm />
+      </div>
 
       <div className="mt-6">
         <NewClientForm />
@@ -56,6 +80,12 @@ export default async function VendorPage() {
                 <p className="text-xs text-slate-400">
                   {c.plan} · {c.seats} seats · license until {c.licenseExpiresAt.toDateString()}
                 </p>
+                {c.lastCheckinAt && (
+                  <p className="text-xs text-slate-400">
+                    version <span className="font-mono">{c.lastSeenVersion?.slice(0, 8) ?? '?'}</span> ·
+                    last check-in {c.lastCheckinAt.toLocaleString()}
+                  </p>
+                )}
               </div>
               <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${STATUS_STYLES[c.status]}`}>
                 {c.status}

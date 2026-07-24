@@ -87,9 +87,20 @@ EOF
   [ -n "${ZOGENCY_ADMIN_SETUP_TOKEN:-}" ] && echo "SEED_ADMIN_SETUP_TOKEN=${ZOGENCY_ADMIN_SETUP_TOKEN}" >> "$ENV_FILE"
   [ -n "${ZOGENCY_LICENSE_KEY:-}" ] && echo "SEED_LICENSE_KEY=${ZOGENCY_LICENSE_KEY}" >> "$ENV_FILE"
   [ -n "${ZOGENCY_LICENSE_PUBLIC_KEY:-}" ] && echo "ZOGENCY_LICENSE_PUBLIC_KEY=${ZOGENCY_LICENSE_PUBLIC_KEY}" >> "$ENV_FILE"
+  [ -n "${ZOGENCY_MASTER_URL:-}" ] && echo "ZOGENCY_MASTER_URL=${ZOGENCY_MASTER_URL}" >> "$ENV_FILE"
   chmod 600 "$ENV_FILE"
 else
   say "Using existing $ENV_FILE"
+fi
+
+# ── Vendor-managed auto-updates (client installs only) ──────────────────────
+if grep -q '^ZOGENCY_MASTER_URL=' "$ENV_FILE" 2>/dev/null; then
+  say "Enabling vendor-managed updates (polls the master every 30 minutes)…"
+  chmod +x "$DIR/deploy/update.sh"
+  cat > /etc/cron.d/zogency-update <<'CRON'
+*/30 * * * * root /opt/zogency/deploy/update.sh >> /var/log/zogency-update.log 2>&1
+CRON
+  chmod 644 /etc/cron.d/zogency-update
 fi
 
 # ── Build & start ───────────────────────────────────────────────────────────

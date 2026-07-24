@@ -73,6 +73,43 @@ export async function createClientInstallAction(
   return { success: `License issued and installation started for ${d.companyName} — watch the status below.` }
 }
 
+const releaseSchema = z.object({
+  ref: z
+    .string()
+    .min(1)
+    .regex(/^[a-zA-Z0-9._\/-]+$/, 'Branch name or commit sha only')
+    .default('main'),
+  notes: z.string().max(500).optional().or(z.literal('')),
+})
+
+export async function publishReleaseAction(
+  _prev: VendorActionState,
+  formData: FormData,
+): Promise<VendorActionState> {
+  const session = await requirePermission('settings.manage')
+  if (!vendorModeEnabled()) return { error: 'Vendor mode is not enabled on this server' }
+  const parsed = releaseSchema.safeParse({
+    ref: String(formData.get('ref') ?? 'main').trim() || 'main',
+    notes: formData.get('notes'),
+  })
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid ref' }
+
+  await withTenant(async () => {
+    await prisma.vendorRelease.create({
+      data: scoped({
+        ref: parsed.data.ref,
+        notes: parsed.data.notes || '',
+        publishedBy: session.user.id,
+      }),
+    })
+    await audit('vendor.release_published', 'vendor_release', null, null, { ref: parsed.data.ref })
+  })
+  revalidatePath('/vendor')
+  return {
+    success: `Release "${parsed.data.ref}" published — client servers pick it up within ~30 minutes.`,
+  }
+}
+
 export async function retryInstallAction(
   _prev: VendorActionState,
   formData: FormData,

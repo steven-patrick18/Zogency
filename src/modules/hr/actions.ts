@@ -258,6 +258,71 @@ export async function saveReviewAction(_p: S, formData: FormData): Promise<S> {
   return { success: 'Review saved' }
 }
 
+// ── Leave policy & company calendar (admin-managed) ─────────────────────────
+
+export async function saveLeaveTypeAction(_p: S, formData: FormData): Promise<S> {
+  const session = await requirePermission('hr.manage')
+  const name = String(formData.get('name') ?? '').trim()
+  const annualQuota = Number(formData.get('annualQuota'))
+  const carryForward = formData.get('carryForward') === 'on'
+  if (!name || !annualQuota || annualQuota < 0) return { error: 'Name and a positive annual quota are required' }
+
+  await withTenant(async () => {
+    const type = await prisma.leaveType.upsert({
+      where: { tenantId_name: { tenantId: session.user.tenantId, name } },
+      update: { annualQuota, carryForward },
+      create: scoped({ name, annualQuota, carryForward }),
+    })
+    // Provision current-year balances for every active employee that lacks one
+    // (existing balances keep their remaining days — quota changes apply to
+    // future years / new employees).
+    const year = new Date().getFullYear()
+    const employees = await prisma.employee.findMany({ where: { status: { not: 'exited' } } })
+    for (const employee of employees) {
+      await prisma.leaveBalance.upsert({
+        where: {
+          tenantId_employeeId_typeId_year: {
+            tenantId: session.user.tenantId, employeeId: employee.id, typeId: type.id, year,
+          },
+        },
+        update: {},
+        create: scoped({ employeeId: employee.id, typeId: type.id, year, available: annualQuota }),
+      })
+    }
+    await audit('leave_type.saved', 'leave_type', type.id, null, { name, annualQuota, carryForward })
+  })
+  revalidatePath('/hr/policy')
+  return { success: `Leave policy "${name}" saved — balances provisioned for all active employees` }
+}
+
+export async function addHolidayAction(_p: S, formData: FormData): Promise<S> {
+  await requirePermission('hr.manage')
+  const date = String(formData.get('date') ?? '')
+  const name = String(formData.get('name') ?? '').trim()
+  if (!date || !name) return { error: 'Date and holiday name are required' }
+  try {
+    await withTenant(async () => {
+      const holiday = await prisma.holiday.create({ data: scoped({ date: new Date(date), name }) })
+      await audit('holiday.added', 'holiday', holiday.id, null, { date, name })
+    })
+  } catch (err: unknown) {
+    if ((err as { code?: string }).code === 'P2002') return { error: 'A holiday already exists on that date' }
+    throw err
+  }
+  revalidatePath('/hr/policy')
+  return { success: 'Holiday added to the company calendar' }
+}
+
+export async function removeHolidayAction(formData: FormData) {
+  await requirePermission('hr.manage')
+  const id = z.string().uuid().parse(formData.get('id'))
+  await withTenant(async () => {
+    await prisma.holiday.delete({ where: { id } })
+    await audit('holiday.removed', 'holiday', id, null, null)
+  })
+  revalidatePath('/hr/policy')
+}
+
 export async function createCycleAction(_p: S, formData: FormData): Promise<S> {
   await requirePermission('hr.manage')
   const name = String(formData.get('name') ?? '').trim()

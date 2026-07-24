@@ -57,6 +57,8 @@ async function runProvisioning(tenantId: string, vendorClientId: string, actorUs
     `ZOGENCY_ADMIN_SETUP_TOKEN=${shellQuote(setupToken)}`,
     `ZOGENCY_LICENSE_KEY=${shellQuote(client.licenseKey)}`,
     publicKey ? `ZOGENCY_LICENSE_PUBLIC_KEY=${shellQuote(publicKey)}` : '',
+    // Enables the client-side auto-updater polling this master's release channel.
+    process.env.AUTH_URL ? `ZOGENCY_MASTER_URL=${shellQuote(process.env.AUTH_URL)}` : '',
   ].filter(Boolean).join(' ')
 
   const sudo = client.sshUser === 'root' ? '' : 'sudo -E '

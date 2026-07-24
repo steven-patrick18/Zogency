@@ -3,6 +3,7 @@
 import { useActionState, useState } from 'react'
 import {
   createClientInstallAction,
+  publishReleaseAction,
   retryInstallAction,
   type VendorActionState,
 } from '@/modules/vendor/actions'
@@ -71,6 +72,23 @@ export function NewClientForm() {
           Cancel
         </button>
       </div>
+    </form>
+  )
+}
+
+export function PublishReleaseForm() {
+  const [state, formAction, pending] = useActionState<VendorActionState, FormData>(publishReleaseAction, {})
+  return (
+    <form action={formAction} className="mt-3 flex flex-wrap items-center gap-2">
+      <input name="ref" defaultValue="main" placeholder="git ref (main or commit sha)" className="w-56 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+      <input name="notes" placeholder="Release notes (optional)" className="w-72 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+      <button
+        disabled={pending}
+        className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
+      >
+        {pending ? 'Publishing…' : 'Publish update to clients'}
+      </button>
+      <Feedback state={state} />
     </form>
   )
 }
