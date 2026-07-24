@@ -44,6 +44,23 @@ export const TENANT_SCOPED_MODELS = new Set([
   'InvoiceLineItem',
   'Payment',
   'PaymentReminder',
+  'Campaign',
+  'Brief',
+  'CampaignStrategy',
+  'CampaignPlan',
+  'PlanMilestone',
+  'Budget',
+  'CreativeConcept',
+  'CreativeAsset',
+  'RevisionRound',
+  'ClientSignoff',
+  'LaunchChecklistItem',
+  'CampaignChannel',
+  'CampaignKpi',
+  'KpiSnapshot',
+  'OptimizationLog',
+  'CampaignReport',
+  'ProjectClosure',
 ])
 
 /** Platform-level models with no tenant_id — only reachable via prismaUnscoped. */

@@ -35,6 +35,7 @@ export function renderNotification(templateKey: string, payload: Record<string, 
     'approval.decided': (p) => `Your approval request was ${p.decision}: ${p.summary}`,
     'client.handover': (p) => `New client handover: ${p.client} (${p.deliverables} SoW deliverables) — project, checklist and draft invoice created.`,
     'invoice.overdue': (p) => `Invoice ${p.number} for ${p.client} is overdue (₹${p.total}).`,
+    'campaign.launched': (p) => `Campaign "${p.name}" is live — confirm the launch to the client (FR-3.15).`,
   }
   return templates[templateKey]?.(payload) ?? templateKey
 }

@@ -10,7 +10,7 @@ const NAV: Array<{ label: string; href?: string; sprint?: string }> = [
   { label: 'Leads', href: '/leads' },
   { label: 'Pipeline', href: '/pipeline' },
   { label: 'Clients', href: '/clients' },
-  { label: 'Campaigns', sprint: 'P2' },
+  { label: 'Campaigns', href: '/campaigns' },
   { label: 'Tasks', href: '/tasks' },
   { label: 'HR', sprint: 'P2' },
   { label: 'Invoices', href: '/invoices' },

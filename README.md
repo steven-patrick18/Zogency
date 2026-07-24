@@ -28,4 +28,8 @@ Next.js (App Router, TypeScript) · PostgreSQL + Prisma (`tenant_id` row isolati
 
 ## Status
 
-📋 **Planning phase** — documentation complete, awaiting BRB sign-off on [doc 11](docs/11-open-questions-and-risks.md) before Phase 0 build starts.
+🚀 **Phase 1 MVP (M1) complete** — full sales chain live: lead ingestion (Meta/Google/website/CSV) → 7-status pipeline with BANT gate → calls + SLA escalation → deal room (versioned proposals, discount approvals) → SoW-gated Closed-Won → auto handover (client, checklist, project, tasks, GST invoice) → payments + dashboard.
+
+🔨 **Phase 2 in progress** — marketing campaign chain (brief → sign-off → planning → creative → client approvals → launch → KPIs → closure). Still pending: [doc 11](docs/11-open-questions-and-risks.md) vendor decisions (IVR, e-sign, accounting) and BRB sign-off.
+
+**Dev quickstart:** PostgreSQL 15 + Node 20+; `cp .env.example .env`, `npm install`, `npx prisma migrate dev`, `npx tsx prisma/seed.ts`, `npm run dev` → login `admin@brb.digital` / `Admin@123`.

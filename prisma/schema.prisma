@@ -742,6 +742,286 @@ model PaymentReminder {
   @@map("payment_reminders")
 }
 
+// ── Marketing campaigns (Phase 2 — FR-3.1–3.20, doc 05) ─────────────────────
+
+// Campaign hub; client work (clientId set) or internal (null). Status gates in
+// src/modules/campaigns/service.ts (doc 05 state diagram).
+model Campaign {
+  id             String         @id @default(uuid(7)) @db.Uuid
+  tenantId       String         @map("tenant_id") @db.Uuid
+  clientId       String?        @map("client_id") @db.Uuid
+  name           String
+  status         CampaignStatus @default(brief)
+  managerId      String?        @map("manager_id") @db.Uuid
+  accountOwnerId String?        @map("account_owner_id") @db.Uuid
+  revisionLimit  Int            @default(2) @map("revision_limit") // per-client override, doc 11 Q11
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  brief          Brief?
+  strategy       CampaignStrategy?
+  plan           CampaignPlan?
+  budget         Budget?
+  concepts       CreativeConcept[]
+  assets         CreativeAsset[]
+  revisionRounds RevisionRound[]
+  signoffs       ClientSignoff[]
+  checklistItems LaunchChecklistItem[]
+  channels       CampaignChannel[]
+  kpis           CampaignKpi[]
+  optimizations  OptimizationLog[]
+  report         CampaignReport?
+  closure        ProjectClosure?
+
+  @@index([tenantId, status])
+  @@map("campaigns")
+}
+
+// Structured brief intake (FR-3.1); internal sign-off via approval_requests
+// (type=brief) gates brief → planning (FR-3.3). Edits audit-logged.
+model Brief {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
+  campaignId     String    @unique @map("campaign_id") @db.Uuid
+  objectives     String
+  targetAudience String    @map("target_audience")
+  deliverables   String
+  timeline       String
+  budgetEstimate String?   @map("budget_estimate")
+  kickoffCallAt  DateTime? @map("kickoff_call_at") // FR-3.2
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  campaign Campaign @relation(fields: [campaignId], references: [id])
+
+  @@map("briefs")
+}
+
+model CampaignStrategy {
+  id               String   @id @default(uuid(7)) @db.Uuid
+  tenantId         String   @map("tenant_id") @db.Uuid
+  campaignId       String   @unique @map("campaign_id") @db.Uuid
+  approach         String
+  audienceSegments String   @map("audience_segments")
+  keyMessages      String   @map("key_messages")
+  channelMix       String   @map("channel_mix")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  campaign Campaign @relation(fields: [campaignId], references: [id])
+
+  @@map("campaign_strategies")
+}
+
+model CampaignPlan {
+  id                 String   @id @default(uuid(7)) @db.Uuid
+  tenantId           String   @map("tenant_id") @db.Uuid
+  campaignId         String   @unique @map("campaign_id") @db.Uuid
+  timelineStart      DateTime @map("timeline_start") @db.Date
+  timelineEnd        DateTime @map("timeline_end") @db.Date
+  resourceAllocation String   @map("resource_allocation")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  campaign   Campaign        @relation(fields: [campaignId], references: [id])
+  milestones PlanMilestone[]
+
+  @@map("campaign_plans")
+}
+
+model PlanMilestone {
+  id      String    @id @default(uuid(7)) @db.Uuid
+  tenantId String   @map("tenant_id") @db.Uuid
+  planId  String    @map("plan_id") @db.Uuid
+  title   String
+  dueOn   DateTime  @map("due_on") @db.Date
+  ownerId String?   @map("owner_id") @db.Uuid
+  doneAt  DateTime? @map("done_at")
+
+  plan CampaignPlan @relation(fields: [planId], references: [id])
+
+  @@map("plan_milestones")
+}
+
+// Budget with approval (FR-3.6) via approval_requests(type=budget).
+model Budget {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  campaignId String   @unique @map("campaign_id") @db.Uuid
+  amount     Decimal  @db.Decimal(12, 2)
+  breakdown  String
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  campaign Campaign @relation(fields: [campaignId], references: [id])
+
+  @@map("budgets")
+}
+
+// Append-only concept board (FR-3.7).
+model CreativeConcept {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  campaignId String   @map("campaign_id") @db.Uuid
+  title      String
+  concept    String
+  direction  String?
+  authorId   String?  @map("author_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  campaign Campaign @relation(fields: [campaignId], references: [id])
+
+  @@map("creative_concepts")
+}
+
+// Asset workspace (FR-3.9); internal review gate before client share (FR-3.8).
+model CreativeAsset {
+  id            String   @id @default(uuid(7)) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  campaignId    String   @map("campaign_id") @db.Uuid
+  type          String   // copy|design|video|digital
+  title         String
+  currentFileId String?  @map("current_file_id") @db.Uuid // files.version_of chains
+  status        String   @default("draft") // draft|internal_review|approved|client_review
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  campaign Campaign @relation(fields: [campaignId], references: [id])
+
+  @@map("creative_assets")
+}
+
+// Append-only, counted against campaigns.revision_limit (FR-3.10/3.11).
+model RevisionRound {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  campaignId String   @map("campaign_id") @db.Uuid
+  roundNo    Int      @map("round_no")
+  feedback   String
+  source     String   @default("client") // client|internal
+  overLimit  Boolean  @default(false) @map("over_limit") // manager override, billable-change note
+  loggedBy   String?  @map("logged_by") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  campaign Campaign @relation(fields: [campaignId], references: [id])
+
+  @@map("revision_rounds")
+}
+
+// Append-only final sign-off evidence (FR-3.12); no portal in Phase 1 (Q13).
+model ClientSignoff {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  campaignId String   @map("campaign_id") @db.Uuid
+  scope      String   @default("final") // asset|final|launch
+  method     String   @default("logged_written") // esign|logged_written
+  evidence   String
+  signedBy   String   @map("signed_by") // client contact name
+  loggedBy   String?  @map("logged_by") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  campaign Campaign @relation(fields: [campaignId], references: [id])
+
+  @@map("client_signoffs")
+}
+
+// Pre-launch checklist (FR-3.13) — all items must be checked to launch.
+model LaunchChecklistItem {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  campaignId String    @map("campaign_id") @db.Uuid
+  title      String
+  checkedBy  String?   @map("checked_by") @db.Uuid
+  checkedAt  DateTime? @map("checked_at")
+
+  campaign Campaign @relation(fields: [campaignId], references: [id])
+
+  @@map("launch_checklist_items")
+}
+
+model CampaignChannel {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  campaignId String    @map("campaign_id") @db.Uuid
+  channel    String    // meta|google|social|email|other
+  goLiveAt   DateTime? @map("go_live_at")
+  status     String    @default("scheduled") // scheduled|live|paused|ended
+
+  campaign Campaign @relation(fields: [campaignId], references: [id])
+
+  @@map("campaign_channels")
+}
+
+model CampaignKpi {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  campaignId String   @map("campaign_id") @db.Uuid
+  name       String   // reach|ctr|conversions|custom
+  target     Decimal  @db.Decimal(14, 2)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  campaign  Campaign      @relation(fields: [campaignId], references: [id])
+  snapshots KpiSnapshot[]
+
+  @@map("campaign_kpis")
+}
+
+// Append-only time series (FR-3.16); manual entry now, ads-API sync per O3.
+model KpiSnapshot {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  kpiId      String   @map("kpi_id") @db.Uuid
+  value      Decimal  @db.Decimal(14, 2)
+  source     String   @default("manual")
+  capturedAt DateTime @default(now()) @map("captured_at")
+
+  kpi CampaignKpi @relation(fields: [kpiId], references: [id])
+
+  @@map("kpi_snapshots")
+}
+
+// Append-only mid-flight optimization log (FR-3.17).
+model OptimizationLog {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  campaignId  String   @map("campaign_id") @db.Uuid
+  changeType  String   @map("change_type") // targeting|budget|creative
+  description String
+  reasoning   String
+  actorId     String?  @map("actor_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  campaign Campaign @relation(fields: [campaignId], references: [id])
+
+  @@map("optimization_logs")
+}
+
+// Auto-compiled performance report (FR-3.18/3.19).
+model CampaignReport {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  campaignId  String    @unique @map("campaign_id") @db.Uuid
+  summary     String
+  kpiResults  Json      @map("kpi_results")
+  presentedAt DateTime? @map("presented_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  campaign Campaign @relation(fields: [campaignId], references: [id])
+
+  @@map("campaign_reports")
+}
+
+// Formal closure with learnings (FR-3.20).
+model ProjectClosure {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  campaignId String   @unique @map("campaign_id") @db.Uuid
+  learnings  String
+  closedBy   String?  @map("closed_by") @db.Uuid
+  closedAt   DateTime @default(now()) @map("closed_at")
+
+  campaign Campaign @relation(fields: [campaignId], references: [id])
+
+  @@map("project_closures")
+}
+
 // ── Calls & SLA (Sprint 4 — FR-2.1–2.5) ────────────────────────────────────
 
 // Append-mostly: created at dial/log time, finalized once with outcome;
@@ -867,6 +1147,17 @@ enum InvoiceStatus {
   partial
   paid
   overdue
+}
+
+enum CampaignStatus {
+  brief
+  planning
+  creative
+  approval
+  launched
+  monitoring
+  reporting
+  closed
 }
 
 enum TenantStatus {
