@@ -191,9 +191,10 @@ export default async function MemberProductivityPage({
               <div>
                 <h2 className="font-semibold text-slate-900">Deep monitoring</h2>
                 <p className="text-xs text-slate-400">
-                  Window titles and periodic screenshots from the agent — for reviewing whether company
-                  data is being taken outside approved tools. Captured with signed employee consent;
-                  screenshots are kept 14 days.
+                  Window titles, browser URLs (where the OS exposes them) and periodic screenshots from the
+                  agent — for reviewing whether company data is being taken outside approved tools. The
+                  screenshots capture the on-screen address bar, so you can see the exact URL even on Windows.
+                  Captured with signed employee consent; screenshots are kept 14 days.
                 </p>
               </div>
               {filtered && (
@@ -218,7 +219,13 @@ export default async function MemberProductivityPage({
                           <span className="truncate text-slate-700" title={t.title}>{t.title}</span>
                           <span className="shrink-0 font-mono text-xs text-slate-400">{fmtTime(t.at)}</span>
                         </div>
-                        {t.app && <span className="text-[11px] text-slate-400">{t.app}</span>}
+                        {t.url ? (
+                          <a href={t.url} target="_blank" rel="noreferrer" className="block truncate text-[11px] text-indigo-500 hover:underline" title={t.url}>
+                            {t.url}
+                          </a>
+                        ) : (
+                          t.app && <span className="text-[11px] text-slate-400">{t.app}</span>
+                        )}
                       </li>
                     ))}
                   </ul>

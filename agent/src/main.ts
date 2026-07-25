@@ -9,9 +9,10 @@ import { captureScreen, sample } from './tracker'
 import { sendPing, sendScreenshot, type PingResult } from './api'
 
 const PING_INTERVAL_MS = 60_000
-// Deep monitoring: one screenshot every N pings (5 min at 1-min pings) while
-// active. Disclosed on the consent screen; pausing the agent pauses this too.
-const SCREENSHOT_EVERY_N_PINGS = 5
+// Deep monitoring: a screenshot every N pings (~3 min) while active, plus one on
+// the first successful ping so a capture appears within a minute. Disclosed on
+// the consent screen; pausing/idle pauses this too.
+const SCREENSHOT_EVERY_N_PINGS = 3
 let pingCount = 0
 // Auto-pause after prolonged inactivity (with a warning first), so idle time
 // off-shift isn't tracked. Resumes automatically on activity.
@@ -84,9 +85,10 @@ async function tick() {
   const result: PingResult = await sendPing(config, s)
 
   // Deep monitoring: periodic screenshot while active (skipped when paused —
-  // this code path is unreachable then — or idle-paused above).
+  // this code path is unreachable then — or idle-paused above). Fire on the very
+  // first successful ping too, so a capture shows up within a minute.
   pingCount++
-  if (result.ok && pingCount % SCREENSHOT_EVERY_N_PINGS === 0) {
+  if (result.ok && (pingCount === 1 || pingCount % SCREENSHOT_EVERY_N_PINGS === 0)) {
     const image = await captureScreen()
     if (image) await sendScreenshot(config, image, s.appName)
   }

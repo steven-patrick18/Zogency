@@ -104,8 +104,8 @@ export type MemberActivityDetail = {
   auditTrail: Array<{ at: Date; action: string; entityType: string }>
   calls: Array<{ at: Date; direction: string; durationSec: number | null; disposition: string | null; leadName: string }>
   completedTasks: Array<{ at: Date; title: string }>
-  // Deep monitoring (monitoring.deep permission) — window titles + screenshots.
-  titles: Array<{ at: Date; app: string | null; title: string }>
+  // Deep monitoring (monitoring.deep permission) — window titles + URLs + screenshots.
+  titles: Array<{ at: Date; app: string | null; title: string; url: string | null }>
   screenshots: Array<{ id: string; at: Date; app: string | null; image: string }>
 }
 
@@ -213,9 +213,9 @@ export async function getMemberActivityDetail(
     // "what they worked on", not 60 copies per hour.
     titles: includeDeep
       ? pings
-          .filter((p) => p.windowTitle)
-          .filter((p, i, arr) => i === 0 || p.windowTitle !== arr[i - 1].windowTitle)
-          .map((p) => ({ at: p.at, app: p.appName, title: p.windowTitle! }))
+          .filter((p) => p.windowTitle || p.windowUrl)
+          .filter((p, i, arr) => i === 0 || p.windowTitle !== arr[i - 1].windowTitle || p.windowUrl !== arr[i - 1].windowUrl)
+          .map((p) => ({ at: p.at, app: p.appName, title: p.windowTitle ?? '(no title)', url: p.windowUrl }))
       : [],
     screenshots: screenshots.map((s) => ({ id: s.id, at: s.at, app: s.appName, image: s.image })),
   }

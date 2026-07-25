@@ -6,12 +6,13 @@
 // clipboard are ever captured.
 import { desktopCapturer, powerMonitor, screen } from 'electron'
 
-export type Sample = { idleSec: number; appName: string | null; windowTitle: string | null }
+export type Sample = { idleSec: number; appName: string | null; windowTitle: string | null; windowUrl: string | null }
 
-let activeWin: (() => Promise<{ owner?: { name?: string }; title?: string } | undefined>) | null = null
+type ActiveWinResult = { owner?: { name?: string }; title?: string; url?: string }
+let activeWin: (() => Promise<ActiveWinResult | undefined>) | null = null
 let activeWinTried = false
 
-async function getActiveWindow(): Promise<{ app: string | null; title: string | null }> {
+async function getActiveWindow(): Promise<{ app: string | null; title: string | null; url: string | null }> {
   if (!activeWinTried) {
     activeWinTried = true
     try {
@@ -23,19 +24,21 @@ async function getActiveWindow(): Promise<{ app: string | null; title: string | 
       activeWin = null
     }
   }
-  if (!activeWin) return { app: null, title: null }
+  if (!activeWin) return { app: null, title: null, url: null }
   try {
     const win = await activeWin()
-    return { app: win?.owner?.name ?? null, title: win?.title ?? null }
+    // `url` is populated for browsers where the OS exposes it (macOS). On
+    // Windows it's usually undefined — the title + screenshots cover it there.
+    return { app: win?.owner?.name ?? null, title: win?.title ?? null, url: win?.url ?? null }
   } catch {
-    return { app: null, title: null }
+    return { app: null, title: null, url: null }
   }
 }
 
 export async function sample(): Promise<Sample> {
   const idleSec = powerMonitor.getSystemIdleTime()
-  const { app, title } = await getActiveWindow()
-  return { idleSec, appName: app, windowTitle: title }
+  const { app, title, url } = await getActiveWindow()
+  return { idleSec, appName: app, windowTitle: title, windowUrl: url }
 }
 
 /**

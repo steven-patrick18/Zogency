@@ -1706,6 +1706,7 @@ model ActivityPing {
   at          DateTime @default(now())
   appName     String?  @map("app_name")
   windowTitle String?  @map("window_title") // active window title (deep monitoring — DLP signal)
+  windowUrl   String?  @map("window_url") // browser URL when the OS exposes it (macOS; Windows: usually null)
   idleSec     Int      @default(0) @map("idle_sec")
 
   @@index([tenantId, userId, at])

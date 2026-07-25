@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
   })
   if (!user || user.status !== 'active') return NextResponse.json({ error: 'invalid token' }, { status: 401 })
 
-  let body: { appName?: string; windowTitle?: string; idleSec?: number } = {}
+  let body: { appName?: string; windowTitle?: string; windowUrl?: string; idleSec?: number } = {}
   try {
     body = await req.json()
   } catch {
@@ -33,6 +33,7 @@ export async function POST(req: NextRequest) {
         userId: user.id,
         appName: body.appName ? String(body.appName).slice(0, 120) : null,
         windowTitle: body.windowTitle ? String(body.windowTitle).slice(0, 300) : null,
+        windowUrl: body.windowUrl ? String(body.windowUrl).slice(0, 500) : null,
         idleSec: Math.max(0, Math.min(3600, Number(body.idleSec) || 0)),
       },
     })

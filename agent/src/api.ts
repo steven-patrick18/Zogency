@@ -19,6 +19,7 @@ export async function sendPing(config: AgentConfig, s: Sample): Promise<PingResu
       body: JSON.stringify({
         appName: s.appName ?? undefined,
         windowTitle: s.windowTitle ?? undefined,
+        windowUrl: s.windowUrl ?? undefined,
         idleSec: s.idleSec,
       }),
       signal: controller.signal,
