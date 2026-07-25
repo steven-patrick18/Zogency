@@ -1251,13 +1251,14 @@ model LeaveType {
 }
 
 model LeaveBalance {
-  id         String @id @default(uuid(7)) @db.Uuid
-  tenantId   String @map("tenant_id") @db.Uuid
-  employeeId String @map("employee_id") @db.Uuid
-  typeId     String @map("type_id") @db.Uuid
-  year       Int
-  available  Int
-  used       Int    @default(0)
+  id            String @id @default(uuid(7)) @db.Uuid
+  tenantId      String @map("tenant_id") @db.Uuid
+  employeeId    String @map("employee_id") @db.Uuid
+  typeId        String @map("type_id") @db.Uuid
+  year          Int
+  available     Int
+  used          Int    @default(0)
+  accruedMonths Int    @default(0) @map("accrued_months") // monthly accruals granted this year (0–12)
 
   employee Employee  @relation(fields: [employeeId], references: [id])
   type     LeaveType @relation(fields: [typeId], references: [id])

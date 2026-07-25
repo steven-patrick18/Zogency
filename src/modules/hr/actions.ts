@@ -7,11 +7,14 @@ import { requirePermission, requireSession, withTenant } from '@/lib/authz'
 import { prisma, scoped } from '@/lib/db/prisma'
 import {
   completeExit,
+  confirmEmployment,
   decideLeave,
   hireCandidate,
   moveCandidateStage,
   punchAttendance,
   requestLeave,
+  runLeaveAccrual,
+  setWeeklyOff,
   startExit,
   type StageName,
 } from './service'
@@ -407,13 +410,37 @@ export async function saveLeaveTypeAction(_p: S, formData: FormData): Promise<S>
           },
         },
         update: {},
-        create: scoped({ employeeId: employee.id, typeId: type.id, year, available: annualQuota }),
+        // Accrual types start empty (topped up by the accrual sweep); fixed-quota
+        // types are granted in full.
+        create: scoped({
+          employeeId: employee.id,
+          typeId: type.id,
+          year,
+          available: rules.accrualPerMonth > 0 ? 0 : annualQuota,
+        }),
       })
     }
+    await runLeaveAccrual()
     await audit('leave_type.saved', 'leave_type', type.id, null, { name, annualQuota, ...rules })
   })
   revalidatePath('/hr/policy')
   return { success: `Leave policy "${name}" saved — balances provisioned for all active employees` }
+}
+
+export async function confirmEmploymentAction(formData: FormData) {
+  await requirePermission('hr.manage')
+  const employeeId = uuid.parse(formData.get('employeeId'))
+  await withTenant(() => confirmEmployment(employeeId))
+  revalidatePath(`/hr/employees/${employeeId}`)
+}
+
+export async function setWeeklyOffAction(_p: S, formData: FormData): Promise<S> {
+  await requirePermission('hr.manage')
+  const employeeId = uuid.parse(formData.get('employeeId'))
+  const days = formData.getAll('days').map((d) => Number(d)).filter((n) => Number.isInteger(n))
+  const r = await withTenant(() => setWeeklyOff(employeeId, days))
+  revalidatePath(`/hr/employees/${employeeId}`)
+  return r.ok ? { success: 'Weekly-offs updated.' } : { error: r.error }
 }
 
 /** Tenant-level leave caps: continuous-absence cap + planned-leave notice. */

@@ -1,5 +1,6 @@
 import { requireSession, withTenant } from '@/lib/authz'
 import { prisma } from '@/lib/db/prisma'
+import { maybeRunLeaveAccrual } from '@/modules/hr/service'
 import { LeaveDecisionsPanel, LeaveRequestForm, PunchPanel } from './attendance-panels'
 
 const LEAVE_STATE_STYLES: Record<string, string> = {
@@ -14,6 +15,7 @@ export default async function AttendancePage() {
   const year = new Date().getFullYear()
 
   const data = await withTenant(async () => {
+    await maybeRunLeaveAccrual() // top up monthly accrual opportunistically
     const employee = await prisma.employee.findUnique({ where: { userId: session.user.id } })
     const [attendance, balances, myRequests, leaveTypes] = await Promise.all([
       employee

@@ -4,7 +4,7 @@ import { audit } from '@/lib/audit'
 import { requireTenantContext } from '@/lib/db/context'
 import { prisma, scoped } from '@/lib/db/prisma'
 import { notify } from '@/lib/notify'
-import { assessLeave, type LeaveContext, type WoffAdjacency } from './leave-rules'
+import { accrualDueMonths, assessLeave, type LeaveContext, type WoffAdjacency } from './leave-rules'
 
 type Result = { ok: true } | { ok: false; error: string }
 
@@ -88,13 +88,20 @@ export async function hireCandidate(
   for (const title of ONBOARDING_ITEMS) {
     await prisma.employeeOnboardingItem.create({ data: scoped({ employeeId: employee.id, title }) })
   }
-  // Current-year leave balances from seeded types (FR-4.10).
+  // Current-year leave balances (FR-4.10). Accrual types start empty and are
+  // pro-rated by runLeaveAccrual below; fixed-quota types are granted in full.
   const year = new Date().getFullYear()
   for (const type of await prisma.leaveType.findMany()) {
     await prisma.leaveBalance.create({
-      data: scoped({ employeeId: employee.id, typeId: type.id, year, available: type.annualQuota }),
+      data: scoped({
+        employeeId: employee.id,
+        typeId: type.id,
+        year,
+        available: type.accrualPerMonth > 0 ? 0 : type.annualQuota,
+      }),
     })
   }
+  await runLeaveAccrual() // grant accrued-to-date for the joining month onward
   await notify(input.managerId, 'hr.new_hire', { name: candidate.name, designation: input.designation })
   await audit('employee.hired', 'employee', employee.id, null, {
     candidateId, designation: input.designation,
@@ -219,6 +226,79 @@ export async function decideLeave(
   await notify(employee.userId, 'hr.leave_decided', { decision, days: request.days })
   await audit('leave.decided', 'leave_request', requestId, { state: 'pending' }, { state: decision })
   return { ok: true }
+}
+
+/** Confirm employment (probation cleared) — starts confirmation-gated accrual (EL). */
+export async function confirmEmployment(employeeId: string): Promise<Result> {
+  const employee = await prisma.employee.findUniqueOrThrow({ where: { id: employeeId } })
+  if (employee.confirmedOn) return { ok: false, error: 'Employee is already confirmed' }
+  await prisma.employee.update({ where: { id: employeeId }, data: { confirmedOn: new Date() } })
+  await audit('employee.confirmed', 'employee', employeeId, null, { confirmedOn: new Date().toISOString() })
+  // Top up any confirmation-gated accrual immediately.
+  await runLeaveAccrual()
+  return { ok: true }
+}
+
+/** Set an employee's two rotational weekly-off days (0=Sun … 6=Sat). */
+export async function setWeeklyOff(employeeId: string, days: number[]): Promise<Result> {
+  const clean = [...new Set(days.filter((d) => d >= 0 && d <= 6))].sort((a, b) => a - b)
+  if (clean.length === 0 || clean.length > 3) return { ok: false, error: 'Choose 1–3 weekly-off days.' }
+  await prisma.employee.update({ where: { id: employeeId }, data: { weeklyOffDays: clean } })
+  await audit('employee.weekly_off', 'employee', employeeId, null, { days: clean })
+  return { ok: true }
+}
+
+/**
+ * Monthly leave accrual (FR-4.10). Idempotent: each balance tracks accruedMonths
+ * so re-running only tops up the shortfall. Accrual is pro-rated from the month
+ * the employee became eligible (join month this year, or — for confirmation-
+ * gated types like EL — the confirmation month) and capped at the annual quota.
+ * Non-accrual types (accrualPerMonth = 0) are provisioned in full and skipped.
+ */
+export async function runLeaveAccrual(now = new Date()): Promise<number> {
+  const year = now.getUTCFullYear()
+
+  const [employees, types] = await Promise.all([
+    prisma.employee.findMany({ where: { status: { not: 'exited' } } }),
+    prisma.leaveType.findMany({ where: { accrualPerMonth: { gt: 0 } } }),
+  ])
+  let granted = 0
+  for (const emp of employees) {
+    for (const type of types) {
+      const dueMonths = accrualDueMonths(type, emp, now)
+      if (dueMonths === 0) continue
+
+      const balance = await prisma.leaveBalance.findFirst({
+        where: { employeeId: emp.id, typeId: type.id, year },
+      })
+      if (balance && balance.accruedMonths >= dueMonths) continue
+
+      const already = balance?.accruedMonths ?? 0
+      const grant = (dueMonths - already) * type.accrualPerMonth
+      const base = balance?.available ?? 0
+      const available = Math.min(base + grant, type.annualQuota)
+      if (balance) {
+        await prisma.leaveBalance.update({
+          where: { id: balance.id },
+          data: { available, accruedMonths: dueMonths },
+        })
+      } else {
+        await prisma.leaveBalance.create({
+          data: scoped({ employeeId: emp.id, typeId: type.id, year, available, accruedMonths: dueMonths }),
+        })
+      }
+      granted++
+    }
+  }
+  return granted
+}
+
+let lastAccrualAt = 0
+/** Opportunistic accrual trigger on HR page loads; at most once/hour per process. */
+export async function maybeRunLeaveAccrual(): Promise<void> {
+  if (Date.now() - lastAccrualAt < 3_600_000) return
+  lastAccrualAt = Date.now()
+  await runLeaveAccrual()
 }
 
 /** Exit workflow (FR-4.7): record + access revocation (user disabled). */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { assessLeave, type LeaveContext, type LeaveRuleType } from './leave-rules'
+import { accrualDueMonths, assessLeave, type LeaveContext, type LeaveRuleType } from './leave-rules'
 
 const d = (s: string) => new Date(`${s}T00:00:00.000Z`)
 
@@ -105,5 +105,32 @@ describe('assessLeave — advance notice', () => {
   it('allows the same request when flagged emergency', () => {
     const r = assessLeave({ fromOn: d('2026-07-02'), toOn: d('2026-07-02'), isEmergency: true }, CL, baseCtx())
     expect(r.ok).toBe(true)
+  })
+})
+
+describe('accrualDueMonths', () => {
+  const CLm = { accrualPerMonth: 1, requiresConfirmation: false }
+  const ELm = { accrualPerMonth: 1, requiresConfirmation: true }
+  const joinedLastYear = { joinedOn: d('2025-01-10'), confirmedOn: null as Date | null }
+
+  it('is 0 for non-accrual types', () => {
+    expect(accrualDueMonths({ accrualPerMonth: 0, requiresConfirmation: false }, joinedLastYear, d('2026-07-15'))).toBe(0)
+  })
+  it('accrues through the current month for a prior-year joiner', () => {
+    expect(accrualDueMonths(CLm, joinedLastYear, d('2026-07-15'))).toBe(7)
+  })
+  it('pro-rates from the join month for a mid-year joiner', () => {
+    const emp = { joinedOn: d('2026-05-04'), confirmedOn: null }
+    expect(accrualDueMonths(CLm, emp, d('2026-07-15'))).toBe(3) // May, Jun, Jul
+  })
+  it('never exceeds 12', () => {
+    expect(accrualDueMonths(CLm, joinedLastYear, d('2026-12-31'))).toBe(12)
+  })
+  it('EL does not accrue before confirmation', () => {
+    expect(accrualDueMonths(ELm, { joinedOn: d('2026-01-10'), confirmedOn: null }, d('2026-07-15'))).toBe(0)
+  })
+  it('EL accrues from the confirmation month', () => {
+    const emp = { joinedOn: d('2026-01-10'), confirmedOn: d('2026-04-20') }
+    expect(accrualDueMonths(ELm, emp, d('2026-07-15'))).toBe(4) // Apr–Jul
   })
 })

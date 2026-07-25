@@ -2,9 +2,11 @@
 
 import { useActionState } from 'react'
 import {
+  confirmEmploymentAction,
   deleteEmployeeDocAction,
   issueAgentTokenAction,
   revokeAgentTokenAction,
+  setWeeklyOffAction,
   updateEmployeeAction,
   uploadEmployeeDocAction,
   type HrActionState,
@@ -22,6 +24,48 @@ function Feedback({ state }: { state: HrActionState }) {
 }
 
 type Option = { id: string; name: string }
+
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+// Set an employee's rotational weekly-off days (drives leave-rule enforcement).
+export function WeeklyOffForm({ employeeId, weeklyOffDays }: { employeeId: string; weeklyOffDays: number[] }) {
+  const [state, formAction, pending] = useActionState<HrActionState, FormData>(setWeeklyOffAction, {})
+  return (
+    <form action={formAction} className="mt-3 space-y-2">
+      <input type="hidden" name="employeeId" value={employeeId} />
+      <div className="flex flex-wrap gap-1.5">
+        {WEEKDAYS.map((label, i) => (
+          <label
+            key={i}
+            className="flex cursor-pointer items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-700 has-[:checked]:border-indigo-400 has-[:checked]:bg-indigo-50"
+          >
+            <input type="checkbox" name="days" value={i} defaultChecked={weeklyOffDays.includes(i)} />
+            {label}
+          </label>
+        ))}
+      </div>
+      <div className="flex items-center gap-2">
+        <button disabled={pending} className={primaryBtn}>{pending ? 'Saving…' : 'Save weekly-offs'}</button>
+        <Feedback state={state} />
+      </div>
+    </form>
+  )
+}
+
+// Confirm employment (probation cleared) — starts EL accrual.
+export function ConfirmEmploymentForm({ employeeId, confirmedOn }: { employeeId: string; confirmedOn: string | null }) {
+  if (confirmedOn) {
+    return <p className="mt-2 text-sm text-green-700">Confirmed on {confirmedOn}.</p>
+  }
+  return (
+    <form action={confirmEmploymentAction} className="mt-2">
+      <input type="hidden" name="employeeId" value={employeeId} />
+      <button className="rounded-lg border border-indigo-300 px-3 py-1.5 text-sm font-semibold text-indigo-700 hover:bg-indigo-50">
+        Confirm employment
+      </button>
+    </form>
+  )
+}
 
 export function JobDetailsForm({
   employeeId,

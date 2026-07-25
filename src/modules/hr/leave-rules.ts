@@ -66,6 +66,29 @@ function workingDaysUntil(from: Date, to: Date, ctx: LeaveContext): number {
   return n
 }
 
+/**
+ * How many monthly accruals an employee should have received this year for a
+ * given type — pro-rated from the join month (or, for confirmation-gated types,
+ * the confirmation month), clamped to 0–12. 0 for non-accrual types or when the
+ * employee is not yet eligible (e.g. EL before confirmation).
+ */
+export function accrualDueMonths(
+  type: { accrualPerMonth: number; requiresConfirmation: boolean },
+  emp: { joinedOn: Date; confirmedOn: Date | null },
+  now: Date,
+): number {
+  if (type.accrualPerMonth <= 0) return 0
+  const year = now.getUTCFullYear()
+  const currentMonth = now.getUTCMonth() + 1
+  const monthOf = (d: Date) => (d.getUTCFullYear() === year ? d.getUTCMonth() + 1 : 1)
+  let startMonth = emp.joinedOn.getUTCFullYear() === year ? monthOf(emp.joinedOn) : 1
+  if (type.requiresConfirmation) {
+    if (!emp.confirmedOn || emp.confirmedOn > now) return 0
+    startMonth = Math.max(startMonth, monthOf(emp.confirmedOn))
+  }
+  return Math.min(12, Math.max(0, currentMonth - startMonth + 1))
+}
+
 export function assessLeave(
   req: { fromOn: Date; toOn: Date; isEmergency?: boolean },
   type: LeaveRuleType,
