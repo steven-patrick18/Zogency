@@ -6,7 +6,7 @@ import { app, BrowserWindow, ipcMain, Menu, nativeImage, Tray } from 'electron'
 import { join } from 'node:path'
 import { isConfigured, loadConfig, saveConfig, type AgentConfig } from './config'
 import { captureScreen, sample } from './tracker'
-import { sendPing, sendScreenshot, type PingResult } from './api'
+import { fetchAgentConfig, sendPing, sendScreenshot, type PingResult } from './api'
 
 const PING_INTERVAL_MS = 60_000
 // Deep monitoring: a screenshot every N pings (~3 min) while active, plus one on
@@ -15,10 +15,22 @@ const PING_INTERVAL_MS = 60_000
 const SCREENSHOT_EVERY_N_PINGS = 3
 let pingCount = 0
 // Auto-pause after prolonged inactivity (with a warning first), so idle time
-// off-shift isn't tracked. Resumes automatically on activity.
-const IDLE_WARN_SEC = 5 * 60
-const IDLE_PAUSE_SEC = 10 * 60
+// off-shift isn't tracked. Resumes automatically on activity. The pause
+// threshold is set by HR (Login hours page → agent auto-logout) and refreshed
+// from the server periodically; the warning fires one minute before the pause.
+let idlePauseSec = 10 * 60
+let idleWarnSec = idlePauseSec - 60
+// Re-poll HR's config roughly every 10 pings (~10 min), plus once on start.
+const CONFIG_EVERY_N_PINGS = 10
 let autoPaused = false
+
+async function refreshRemoteConfig() {
+  const remote = await fetchAgentConfig(config)
+  if (remote) {
+    idlePauseSec = Math.max(60, remote.idleLogoutMin * 60)
+    idleWarnSec = Math.max(30, idlePauseSec - 60)
+  }
+}
 
 let tray: Tray | null = null
 let setupWindow: BrowserWindow | null = null
@@ -57,6 +69,7 @@ const TRAY_ICON = nativeImage.createFromDataURL(
 function scheduleTicker() {
   if (timer) clearInterval(timer)
   timer = setInterval(tick, PING_INTERVAL_MS)
+  void refreshRemoteConfig() // pick up HR's idle-logout setting on start
   void tick()
 }
 
@@ -65,7 +78,7 @@ async function tick() {
   const s = await sample()
 
   // Idle auto-pause with warning (FR — agent auto-logout on idle).
-  if (s.idleSec >= IDLE_PAUSE_SEC) {
+  if (s.idleSec >= idlePauseSec) {
     if (!autoPaused) {
       autoPaused = true
       lastStatus = 'Auto-paused (inactive) — resumes on activity'
@@ -77,12 +90,17 @@ async function tick() {
   if (autoPaused && s.idleSec < 60) {
     autoPaused = false // activity resumed
   }
-  if (s.idleSec >= IDLE_WARN_SEC && s.idleSec < IDLE_PAUSE_SEC && !autoPaused) {
+  if (s.idleSec >= idleWarnSec && s.idleSec < idlePauseSec && !autoPaused) {
     lastStatus = `Idle ${Math.floor(s.idleSec / 60)} min — will pause soon`
     rebuildTray()
   }
 
   const result: PingResult = await sendPing(config, s)
+
+  // Periodically re-sync HR's config (idle-logout threshold may have changed).
+  if (result.ok && pingCount > 0 && pingCount % CONFIG_EVERY_N_PINGS === 0) {
+    void refreshRemoteConfig()
+  }
 
   // Deep monitoring: periodic screenshot while active (skipped when paused —
   // this code path is unreachable then — or idle-paused above). Fire on the very

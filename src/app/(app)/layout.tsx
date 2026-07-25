@@ -3,8 +3,10 @@ import { requireSession, withTenant } from '@/lib/authz'
 import { prisma } from '@/lib/db/prisma'
 import { logoutAction } from '@/modules/auth/actions'
 import { getAgentStatus } from '@/modules/monitoring/agent-status'
+import { getSelfDaySummary } from '@/modules/hr/attendance'
 import { getWorkspaceLicense } from '@/modules/settings/service'
 import { vendorModeEnabled } from '@/modules/vendor/config'
+import { PunchWidget } from './punch-widget'
 
 // Module nav. `perm` mirrors each page's own requirePermission gate, so a user
 // only sees links they can actually open (no perm = everyone). Keep these in
@@ -45,12 +47,15 @@ const LICENSE_BANNERS: Record<string, { text: string; cls: string }> = {
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await requireSession()
-  const [license, unreadCount, me, agent] = await withTenant(async () =>
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const [license, unreadCount, me, agent, self] = await withTenant(async () =>
     Promise.all([
       getWorkspaceLicense(),
       prisma.notification.count({ where: { userId: session.user.id, readAt: null } }),
       prisma.user.findUnique({ where: { id: session.user.id }, select: { avatar: true } }),
       getAgentStatus(session.user.id),
+      getSelfDaySummary(session.user.id, today),
     ]),
   )
   const banner = LICENSE_BANNERS[license.state]
@@ -100,6 +105,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex shrink-0 items-center justify-end gap-2 border-b border-slate-200 bg-white px-6 py-2">
+          {/* Punch in/out + today's active hours — only for linked employees. */}
+          {self && (
+            <PunchWidget
+              punchedIn={self.punchedIn}
+              outAt={!!self.outAt}
+              activeMinutes={self.activeMinutes}
+            />
+          )}
           {/* Desktop-agent status — only for users with monitoring enabled. */}
           {agent.hasToken && (
             <Link

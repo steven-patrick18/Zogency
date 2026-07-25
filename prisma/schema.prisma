@@ -78,6 +78,10 @@ model TenantSettings {
   plannedLeaveNoticeDays   Int @default(2) @map("planned_leave_notice_days") // working days' advance notice
   leaveRolloverYear        Int @default(0) @map("leave_rollover_year") // last year the year-end carry-forward ran INTO
   leavePolicyDoc           String? @map("leave_policy_doc") // HR-editable policy prose (markdown); null = show the auto-generated one
+  // Attendance-from-activity policy (HR-configurable).
+  minProductiveMinutes     Int @default(480) @map("min_productive_minutes") // full attendance ≥ this (8h default)
+  halfDayMinutes           Int @default(240) @map("half_day_minutes")       // half-day ≥ this (4h default)
+  agentIdleLogoutMin       Int @default(10)  @map("agent_idle_logout_min")  // agent auto-pauses after this many idle minutes
   updatedAt            DateTime @updatedAt @map("updated_at")
 
   tenant Tenant @relation(fields: [tenantId], references: [id])
@@ -1212,19 +1216,41 @@ model EmployeeExit {
 
 // Append-only daily attendance (FR-4.8); corrections via new day rows only.
 model AttendanceRecord {
-  id         String    @id @default(uuid(7)) @db.Uuid
-  tenantId   String    @map("tenant_id") @db.Uuid
-  employeeId String    @map("employee_id") @db.Uuid
-  date       DateTime  @db.Date
-  inAt       DateTime? @map("in_at")
-  outAt      DateTime? @map("out_at")
-  mode       String    @default("office") // office|wfh|leave|holiday
-  createdAt  DateTime  @default(now()) @map("created_at")
+  id               String    @id @default(uuid(7)) @db.Uuid
+  tenantId         String    @map("tenant_id") @db.Uuid
+  employeeId       String    @map("employee_id") @db.Uuid
+  date             DateTime  @db.Date
+  inAt             DateTime? @map("in_at")
+  outAt            DateTime? @map("out_at")
+  mode             String    @default("office") // office|wfh|leave|holiday
+  productiveMinutes Int      @default(0) @map("productive_minutes") // active minutes from the agent
+  creditMinutes    Int       @default(0) @map("credit_minutes")     // approved excess credit
+  status           String?   // present|half_day|absent (computed from productive+credit vs policy)
+  createdAt        DateTime  @default(now()) @map("created_at")
 
   employee Employee @relation(fields: [employeeId], references: [id])
 
   @@unique([tenantId, employeeId, date])
   @@map("attendance_records")
+}
+
+// Excess-hours credit toward attendance — HR requests, Admin approves, then the
+// day's attendance is auto-marked with the credit applied.
+model AttendanceAdjustment {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  employeeId  String    @map("employee_id") @db.Uuid
+  date        DateTime  @db.Date
+  minutes     Int       // credit minutes toward the productive-hours threshold
+  reason      String
+  state       String    @default("pending") // pending|approved|rejected
+  requestedBy String?   @map("requested_by") @db.Uuid
+  approvedBy  String?   @map("approved_by") @db.Uuid
+  decidedAt   DateTime? @map("decided_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([tenantId, employeeId, date])
+  @@map("attendance_adjustments")
 }
 
 model LeaveType {

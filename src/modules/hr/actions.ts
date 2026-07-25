@@ -18,6 +18,11 @@ import {
   startExit,
   type StageName,
 } from './service'
+import {
+  computeDayAttendance,
+  decideAttendanceCredit,
+  requestAttendanceCredit,
+} from './attendance'
 
 export type HrActionState = { error?: string; success?: string }
 type S = HrActionState
@@ -487,6 +492,60 @@ export async function saveLeavePolicyDocAction(_p: S, formData: FormData): Promi
   })
   revalidatePath('/hr/policy')
   return { success: doc ? 'Leave policy saved.' : 'Reverted to the auto-generated policy.' }
+}
+
+// ── Attendance from activity (HR login-hours page) ──────────────────────────
+
+/** Attendance policy: min productive / half-day thresholds + agent auto-logout. */
+export async function saveAttendancePolicyAction(_p: S, formData: FormData): Promise<S> {
+  const session = await requirePermission('hr.manage')
+  const minH = Math.max(0, Number(formData.get('minProductiveHours')) || 8)
+  const halfH = Math.max(0, Number(formData.get('halfDayHours')) || 4)
+  const idleMin = Math.max(1, Number(formData.get('agentIdleLogoutMin')) || 10)
+  await withTenant(async () => {
+    await prisma.tenantSettings.update({
+      where: { tenantId: session.user.tenantId },
+      data: {
+        minProductiveMinutes: Math.round(minH * 60),
+        halfDayMinutes: Math.round(halfH * 60),
+        agentIdleLogoutMin: idleMin,
+      },
+    })
+    await audit('attendance_policy.saved', 'tenant_settings', session.user.tenantId, null, { minH, halfH, idleMin })
+  })
+  revalidatePath('/hr/login-hours')
+  return { success: 'Attendance policy saved.' }
+}
+
+/** Recompute a day's attendance from agent activity + approved credits. */
+export async function recomputeAttendanceAction(formData: FormData) {
+  await requirePermission('hr.manage')
+  const date = new Date(String(formData.get('date') ?? new Date().toISOString().slice(0, 10)))
+  date.setHours(0, 0, 0, 0)
+  await withTenant(() => computeDayAttendance(date))
+  revalidatePath('/hr/login-hours')
+}
+
+/** HR requests excess-hours credit toward attendance (Admin approves). */
+export async function requestAttendanceCreditAction(_p: S, formData: FormData): Promise<S> {
+  const session = await requirePermission('hr.manage')
+  const employeeId = uuid.parse(formData.get('employeeId'))
+  const date = new Date(String(formData.get('date')))
+  date.setHours(0, 0, 0, 0)
+  const minutes = Math.max(1, Math.round((Number(formData.get('hours')) || 0) * 60))
+  const reason = String(formData.get('reason') ?? '').trim() || 'Excess productive hours'
+  await withTenant(() => requestAttendanceCredit({ employeeId, date, minutes, reason, requestedBy: session.user.id }))
+  revalidatePath('/hr/login-hours')
+  return { success: 'Credit requested — awaiting Admin approval.' }
+}
+
+/** Admin approves/rejects an attendance credit; approval auto-marks the day. */
+export async function decideAttendanceCreditAction(formData: FormData) {
+  const session = await requirePermission('approvals.act')
+  const id = uuid.parse(formData.get('id'))
+  const approve = formData.get('decision') === 'approve'
+  await withTenant(() => decideAttendanceCredit(id, approve, session.user.id))
+  revalidatePath('/hr/login-hours')
 }
 
 /** Tenant-level leave caps: continuous-absence cap + planned-leave notice. */

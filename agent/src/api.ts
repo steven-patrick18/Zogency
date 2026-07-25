@@ -5,6 +5,26 @@ import type { Sample } from './tracker'
 
 export type PingResult = { ok: boolean; status?: number; error?: string }
 
+/** Fetch HR-set runtime config (currently the idle auto-logout threshold). */
+export async function fetchAgentConfig(config: AgentConfig): Promise<{ idleLogoutMin: number } | null> {
+  const url = `${config.serverUrl.replace(/\/+$/, '')}/api/agent/config`
+  try {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 15_000)
+    const res = await fetch(url, {
+      headers: { authorization: `Bearer ${config.token}` },
+      signal: controller.signal,
+    })
+    clearTimeout(timer)
+    if (!res.ok) return null
+    const body = (await res.json()) as { idleLogoutMin?: number }
+    const min = Number(body.idleLogoutMin)
+    return { idleLogoutMin: Number.isFinite(min) && min > 0 ? min : 10 }
+  } catch {
+    return null
+  }
+}
+
 export async function sendPing(config: AgentConfig, s: Sample): Promise<PingResult> {
   const url = `${config.serverUrl.replace(/\/+$/, '')}/api/agent/ping`
   try {
