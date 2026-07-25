@@ -1,9 +1,19 @@
 {$DOMAIN} {
-	reverse_proxy web:3000
 	encode gzip
 	header {
 		Strict-Transport-Security "max-age=31536000"
 		X-Content-Type-Options "nosniff"
 		X-Frame-Options "DENY"
+	}
+
+	# Static downloads (e.g. the desktop-agent build) served straight from disk.
+	handle_path /downloads/* {
+		root * /srv/downloads
+		file_server
+	}
+
+	# Everything else goes to the Next.js app.
+	handle {
+		reverse_proxy web:3000
 	}
 }

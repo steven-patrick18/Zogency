@@ -50,3 +50,7 @@ next-env.d.ts
 /agent/node_modules/
 /agent/dist/
 /agent/release/
+
+# Agent build artifacts served via Caddy (not committed)
+deploy/downloads/*.zip
+deploy/downloads/*.exe
