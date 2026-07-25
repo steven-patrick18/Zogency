@@ -2,11 +2,13 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { requirePermission, withTenant } from '@/lib/authz'
 import { prisma } from '@/lib/db/prisma'
+import { visibleRoles } from '@/lib/roles'
 import { setUserRoles } from '@/modules/users/actions'
 import { AvatarPanel, PasswordPanel, ProfilePanel } from './edit-panels'
 
 export default async function EditUserPage({ params }: { params: Promise<{ id: string }> }) {
-  await requirePermission('users.manage')
+  const session = await requirePermission('users.manage')
+  const canVendor = session.user.permissions.includes('vendor.manage')
   const { id } = await params
   const data = await withTenant(async () => {
     const user = await prisma.user.findUnique({
@@ -14,8 +16,8 @@ export default async function EditUserPage({ params }: { params: Promise<{ id: s
       include: { userRoles: true },
     })
     if (!user) return null
-    const roles = await prisma.role.findMany({ orderBy: { name: 'asc' } })
-    return { user, roles }
+    const allRoles = await prisma.role.findMany({ orderBy: { name: 'asc' } })
+    return { user, roles: visibleRoles(allRoles, canVendor) }
   })
   if (!data) notFound()
   const { user, roles } = data

@@ -1,10 +1,16 @@
-import { withTenant } from '@/lib/authz'
+import { requireSession, withTenant } from '@/lib/authz'
 import { prisma, prismaUnscoped } from '@/lib/db/prisma'
+import { visibleRoles } from '@/lib/roles'
+import { RoleMatrix } from './role-matrix'
 
 export default async function RolesPage() {
+  const session = await requireSession()
+  const canManage = session.user.permissions.includes('settings.manage')
+  const canVendor = session.user.permissions.includes('vendor.manage')
+
   const roles = await withTenant(() =>
     prisma.role.findMany({
-      include: { rolePermissions: { include: { permission: true } } },
+      include: { rolePermissions: true },
       orderBy: { name: 'asc' },
     }),
   )
@@ -12,34 +18,23 @@ export default async function RolesPage() {
     orderBy: [{ module: 'asc' }, { key: 'asc' }],
   })
 
+  // Hide the internal Demo Admin / Vendor Owner roles unless the viewer runs
+  // the vendor console; hide the vendor.manage row from non-operators too.
+  const shownRoles = visibleRoles(roles, canVendor)
+  const shownPerms = canVendor ? permissions : permissions.filter((p) => p.key !== 'vendor.manage')
+  const granted = shownRoles.flatMap((r) => r.rolePermissions.map((rp) => `${r.id}:${rp.permissionId}`))
+
   return (
-    <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-      <table className="w-full text-xs">
-        <thead className="bg-slate-50 text-left uppercase tracking-wide text-slate-500">
-          <tr>
-            <th className="sticky left-0 bg-slate-50 px-3 py-2">Permission</th>
-            {roles.map((r) => (
-              <th key={r.id} className="px-2 py-2 text-center">{r.name}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100">
-          {permissions.map((p) => (
-            <tr key={p.id}>
-              <td className="sticky left-0 bg-white px-3 py-1.5 font-mono text-slate-700">{p.key}</td>
-              {roles.map((r) => (
-                <td key={r.id} className="px-2 py-1.5 text-center">
-                  {r.rolePermissions.some((rp) => rp.permissionId === p.id) ? (
-                    <span className="text-green-600">✓</span>
-                  ) : (
-                    <span className="text-slate-200">—</span>
-                  )}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div>
+      <p className="mb-3 text-sm text-slate-500">
+        What each role can do. {canManage ? 'Edit permissions below.' : 'Read-only (needs Settings management).'}
+      </p>
+      <RoleMatrix
+        roles={shownRoles.map((r) => ({ id: r.id, name: r.name, isSystem: r.isSystem }))}
+        permissions={shownPerms.map((p) => ({ id: p.id, key: p.key, module: p.module }))}
+        granted={granted}
+        canManage={canManage}
+      />
     </div>
   )
 }

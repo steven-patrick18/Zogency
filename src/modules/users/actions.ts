@@ -7,6 +7,7 @@ import { audit, redact } from '@/lib/audit'
 import { requirePermission, withTenant } from '@/lib/authz'
 import { prisma, scoped } from '@/lib/db/prisma'
 import { notify } from '@/lib/notify'
+import { isInternalRole } from '@/lib/roles'
 
 const createUserSchema = z.object({
   name: z.string().min(1).max(100),
@@ -15,12 +16,18 @@ const createUserSchema = z.object({
 })
 
 export async function createUser(formData: FormData) {
-  await requirePermission('users.manage')
+  const session = await requirePermission('users.manage')
+  const canVendor = session.user.permissions.includes('vendor.manage')
   const data = createUserSchema.parse(Object.fromEntries(formData))
   const roleIds = formData.getAll('roleIds').map(String)
   if (roleIds.length === 0) throw new Error('Select at least one role')
 
   await withTenant(async () => {
+    // Escalation guard: only vendor operators may assign internal roles.
+    const wantedRoles = await prisma.role.findMany({ where: { id: { in: roleIds } } })
+    if (!canVendor && wantedRoles.some((r) => isInternalRole(r.name))) {
+      throw new Error('You can’t assign the Demo Admin / Vendor Owner roles.')
+    }
     const user = await prisma.user.create({
       data: scoped({
         name: data.name,
@@ -28,14 +35,61 @@ export async function createUser(formData: FormData) {
         passwordHash: await bcrypt.hash(data.password, 12),
       }),
     })
-    for (const roleId of roleIds) {
-      await prisma.role.findUniqueOrThrow({ where: { id: roleId } }) // tenant-guarded
-    }
+    if (wantedRoles.length !== roleIds.length) throw new Error('Unknown role selected')
     await prismaCreateUserRoles(user.id, roleIds)
     await audit('user.create', 'user', user.id, null, redact(user))
     await notify(user.id, 'user.created', { name: user.name })
   })
   revalidatePath('/settings/users')
+}
+
+export type RolePermState = { error?: string; success?: string }
+
+/**
+ * Grant/revoke a single permission on a role (editable permission matrix).
+ * Guards against privilege escalation and self-lockout:
+ *  - only vendor operators (vendor.manage) may touch vendor.manage or edit the
+ *    internal Demo Admin / Vendor Owner roles — a client/demo admin can't
+ *    escalate themselves to the vendor console;
+ *  - you cannot remove settings.manage from a role you yourself hold.
+ */
+export async function setRolePermissionAction(_p: RolePermState, formData: FormData): Promise<RolePermState> {
+  const session = await requirePermission('settings.manage')
+  const canVendor = session.user.permissions.includes('vendor.manage')
+  const roleId = z.string().uuid().parse(formData.get('roleId'))
+  const permissionId = z.string().uuid().parse(formData.get('permissionId'))
+  const grant = formData.get('grant') === '1'
+
+  return withTenant(async () => {
+    const [role, permission] = await Promise.all([
+      prisma.role.findUnique({ where: { id: roleId } }),
+      prisma.permission.findUnique({ where: { id: permissionId } }),
+    ])
+    if (!role || !permission) return { error: 'Unknown role or permission' }
+
+    if (isInternalRole(role.name) && !canVendor) {
+      return { error: `The "${role.name}" role is managed by the vendor console.` }
+    }
+    if (permission.key === 'vendor.manage' && !canVendor) {
+      return { error: 'Only a vendor operator can grant the vendor-console permission.' }
+    }
+    if (permission.key === 'settings.manage' && !grant) {
+      const holdsRole = await prisma.userRole.findFirst({ where: { userId: session.user.id, roleId } })
+      if (holdsRole) return { error: 'You can’t remove Settings management from a role you hold — you’d lock yourself out.' }
+    }
+
+    if (grant) {
+      await prisma.rolePermission.upsert({
+        where: { roleId_permissionId: { roleId, permissionId } },
+        update: {},
+        create: { roleId, permissionId },
+      })
+    } else {
+      await prisma.rolePermission.deleteMany({ where: { roleId, permissionId } })
+    }
+    await audit('role.permission_changed', 'role', roleId, null, { permission: permission.key, grant })
+    return { success: 'Saved.' }
+  })
 }
 
 // UserRole is a join model (no tenant_id) — parents are validated above.
@@ -47,17 +101,30 @@ async function prismaCreateUserRoles(userId: string, roleIds: string[]) {
 }
 
 export async function setUserRoles(formData: FormData) {
-  await requirePermission('users.manage')
+  const session = await requirePermission('users.manage')
+  const canVendor = session.user.permissions.includes('vendor.manage')
   const userId = z.string().uuid().parse(formData.get('userId'))
-  const roleIds = formData.getAll('roleIds').map(String)
-  if (roleIds.length === 0) throw new Error('A user needs at least one role')
+  const submitted = formData.getAll('roleIds').map(String)
 
   await withTenant(async () => {
     const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } }) // tenant-guarded
+    const before = await prisma.userRole.findMany({ where: { userId }, include: { role: true } })
+
+    // A non-operator can neither add nor remove internal (Demo Admin / Vendor
+    // Owner) roles: strip them from the submitted set and re-add the ones the
+    // user already had, so editing never silently escalates or strips them.
+    let roleIds = submitted
+    if (!canVendor) {
+      const submittedRoles = await prisma.role.findMany({ where: { id: { in: submitted } } })
+      roleIds = submittedRoles.filter((r) => !isInternalRole(r.name)).map((r) => r.id)
+      const keepInternal = before.filter((ur) => isInternalRole(ur.role.name)).map((ur) => ur.roleId)
+      roleIds = [...new Set([...roleIds, ...keepInternal])]
+    }
+    if (roleIds.length === 0) throw new Error('A user needs at least one role')
     for (const roleId of roleIds) {
       await prisma.role.findUniqueOrThrow({ where: { id: roleId } })
     }
-    const before = await prisma.userRole.findMany({ where: { userId } })
+
     await prisma.userRole.deleteMany({ where: { userId } })
     await prisma.userRole.createMany({ data: roleIds.map((roleId) => ({ userId, roleId })) })
     const roles = await prisma.role.findMany({ where: { id: { in: roleIds } } })

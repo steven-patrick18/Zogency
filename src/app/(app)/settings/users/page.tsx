@@ -1,6 +1,7 @@
 import Link from 'next/link'
-import { withTenant } from '@/lib/authz'
+import { requireSession, withTenant } from '@/lib/authz'
 import { prisma } from '@/lib/db/prisma'
+import { visibleRoles } from '@/lib/roles'
 import { createUser, toggleUserStatus } from '@/modules/users/actions'
 
 function Avatar({ avatar, name }: { avatar: string | null; name: string }) {
@@ -20,7 +21,9 @@ const field =
   'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none'
 
 export default async function UsersPage() {
-  const [users, roles] = await withTenant(() =>
+  const session = await requireSession()
+  const canVendor = session.user.permissions.includes('vendor.manage')
+  const [users, allRoles] = await withTenant(() =>
     Promise.all([
       prisma.user.findMany({
         include: { userRoles: { include: { role: true } } },
@@ -29,6 +32,8 @@ export default async function UsersPage() {
       prisma.role.findMany({ orderBy: { name: 'asc' } }),
     ]),
   )
+  // Internal Demo Admin / Vendor Owner roles aren't assignable by non-operators.
+  const roles = visibleRoles(allRoles, canVendor)
 
   return (
     <div className="space-y-6">
