@@ -19,6 +19,8 @@
     "productName": "Zogency Agent",
     "directories": { "output": "release", "buildResources": "build" },
     "files": ["dist/**/*", "renderer/**/*", "package.json"],
+    "protocols": [{ "name": "Zogency Agent", "schemes": ["zogency-agent"] }],
+    "npmRebuild": false,
     "win": { "target": ["nsis"] },
     "nsis": {
       "oneClick": false,
