@@ -16,17 +16,28 @@ async function assertWritable() {
   }
 }
 
+const opt = (max: number) => z.string().trim().max(max).optional()
 const generalSchema = z.object({
   primaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
   slaHours: z.coerce.number().int().min(1).max(168),
   revisionRoundDefault: z.coerce.number().int().min(0).max(10),
-  emailSenderName: z.string().max(100).optional(),
+  emailSenderName: opt(100),
   emailSenderAddress: z.string().email().optional().or(z.literal('')),
+  timezone: z.string().min(1).max(64),
+  country: opt(80),
+  addressLine: opt(200),
+  city: opt(80),
+  stateRegion: opt(80),
+  postalCode: opt(20),
+  phone: opt(30),
+  websiteUrl: z.string().url().optional().or(z.literal('')),
+  taxId: opt(40),
 })
 
 export async function updateGeneralSettings(formData: FormData) {
   await requirePermission('settings.manage')
   const data = generalSchema.parse(Object.fromEntries(formData))
+  const nn = (v: string | undefined) => (v && v.length ? v : null) // '' → null
   await withTenant(async () => {
     await assertWritable()
     const before = await prisma.tenantSettings.findFirst()
@@ -36,8 +47,17 @@ export async function updateGeneralSettings(formData: FormData) {
         primaryColor: data.primaryColor,
         slaHours: data.slaHours,
         revisionRoundDefault: data.revisionRoundDefault,
-        emailSenderName: data.emailSenderName || null,
-        emailSenderAddress: data.emailSenderAddress || null,
+        emailSenderName: nn(data.emailSenderName),
+        emailSenderAddress: nn(data.emailSenderAddress),
+        timezone: data.timezone,
+        country: nn(data.country),
+        addressLine: nn(data.addressLine),
+        city: nn(data.city),
+        stateRegion: nn(data.stateRegion),
+        postalCode: nn(data.postalCode),
+        phone: nn(data.phone),
+        websiteUrl: nn(data.websiteUrl),
+        taxId: nn(data.taxId),
       },
     })
     await audit('settings.update', 'tenant_settings', before!.id, { ...before }, data)

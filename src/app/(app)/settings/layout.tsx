@@ -9,16 +9,19 @@ const TABS = [
   { label: 'Automation', href: '/settings/automation' },
   { label: 'Integrations', href: '/settings/integrations' },
   { label: 'License', href: '/settings/license' },
+  { label: 'Server', href: '/settings/server', perm: 'system.manage' },
   { label: 'Security', href: '/settings/security' },
 ]
 
 export default async function SettingsLayout({ children }: { children: React.ReactNode }) {
-  await requirePermission('settings.manage')
+  const session = await requirePermission('settings.manage')
+  const perms = session.user.permissions
+  const tabs = TABS.filter((t) => !t.perm || perms.includes(t.perm))
   return (
     <div>
       <h1 className="text-2xl font-bold text-slate-900">Settings</h1>
-      <nav className="mt-4 flex gap-1 border-b border-slate-200">
-        {TABS.map((t) => (
+      <nav className="mt-4 flex flex-wrap gap-1 border-b border-slate-200">
+        {tabs.map((t) => (
           <Link
             key={t.href}
             href={t.href}
@@ -28,7 +31,7 @@ export default async function SettingsLayout({ children }: { children: React.Rea
           </Link>
         ))}
       </nav>
-      <div className="mt-6 max-w-3xl">{children}</div>
+      <div className="mt-6 max-w-5xl">{children}</div>
     </div>
   )
 }

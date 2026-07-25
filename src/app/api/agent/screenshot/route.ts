@@ -9,7 +9,7 @@ import { runWithTenant } from '@/lib/db/context'
 import { prisma, prismaUnscoped } from '@/lib/db/prisma'
 
 const MAX_IMAGE_BYTES = 400_000 // downscaled JPEG data-URI cap
-const RETENTION_DAYS = 14
+const DEFAULT_RETENTION_HOURS = 336 // 14 days — used if settings are missing
 
 export async function POST(req: NextRequest) {
   const token = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '').trim()
@@ -44,9 +44,12 @@ export async function POST(req: NextRequest) {
         image,
       },
     })
-    // Retention prune — cheap with the (tenant,user,at) index.
+    // Retention prune — window is admin-set (Settings → Server). Cheap with the
+    // (tenant,user,at) index.
+    const settings = await prisma.tenantSettings.findFirst({ select: { captureRetentionHours: true } })
+    const hours = settings?.captureRetentionHours ?? DEFAULT_RETENTION_HOURS
     await prisma.screenCapture.deleteMany({
-      where: { at: { lt: new Date(Date.now() - RETENTION_DAYS * 86_400_000) } },
+      where: { at: { lt: new Date(Date.now() - hours * 3_600_000) } },
     })
   })
   return NextResponse.json({ ok: true })

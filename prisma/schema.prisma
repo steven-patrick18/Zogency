@@ -68,6 +68,16 @@ model TenantSettings {
   primaryColor         String  @default("#4f46e5") @map("primary_color")
   emailSenderName      String? @map("email_sender_name")
   emailSenderAddress   String? @map("email_sender_address")
+  // Agency profile (shown on documents, used for locale-correct timestamps).
+  timezone             String  @default("Asia/Kolkata") @map("timezone")
+  country              String? @map("country")
+  addressLine          String? @map("address_line")
+  city                 String? @map("city")
+  stateRegion          String? @map("state_region")
+  postalCode           String? @map("postal_code")
+  phone                String? @map("phone")
+  websiteUrl           String? @map("website_url")
+  taxId                String? @map("tax_id") // GSTIN / VAT / tax registration
   slaHours             Int     @default(24) @map("sla_hours")
   revisionRoundDefault Int     @default(2) @map("revision_round_default")
   featureFlags         Json    @default("{}") @map("feature_flags")
@@ -82,6 +92,8 @@ model TenantSettings {
   minProductiveMinutes     Int @default(480) @map("min_productive_minutes") // full attendance ≥ this (8h default)
   halfDayMinutes           Int @default(240) @map("half_day_minutes")       // half-day ≥ this (4h default)
   agentIdleLogoutMin       Int @default(10)  @map("agent_idle_logout_min")  // agent auto-pauses after this many idle minutes
+  // Deep-monitoring data retention — screen captures older than this are purged.
+  captureRetentionHours    Int @default(336) @map("capture_retention_hours") // 14 days default
   updatedAt            DateTime @updatedAt @map("updated_at")
 
   tenant Tenant @relation(fields: [tenantId], references: [id])

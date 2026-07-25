@@ -40,6 +40,7 @@ const PERMISSIONS: Array<[key: string, module: string, description: string]> = [
   ['approvals.act', 'approvals', 'Act on assigned approval requests'],
   ['automation.manage', 'automation', 'Edit automation rules'],
   ['settings.manage', 'settings', 'Tenant settings, statuses, departments, templates'],
+  ['system.manage', 'system', 'Server status, storage & data retention'],
   ['users.manage', 'users', 'Manage users and roles'],
   ['vendor.manage', 'vendor', 'Vendor console: licenses, client installs, releases (owner only)'],
 ]
