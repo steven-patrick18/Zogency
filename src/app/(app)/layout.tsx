@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { requireSession, withTenant } from '@/lib/authz'
 import { prisma } from '@/lib/db/prisma'
 import { logoutAction } from '@/modules/auth/actions'
+import { getAgentStatus } from '@/modules/monitoring/agent-status'
 import { getWorkspaceLicense } from '@/modules/settings/service'
 import { vendorModeEnabled } from '@/modules/vendor/config'
 
@@ -44,11 +45,12 @@ const LICENSE_BANNERS: Record<string, { text: string; cls: string }> = {
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await requireSession()
-  const [license, unreadCount, me] = await withTenant(async () =>
+  const [license, unreadCount, me, agent] = await withTenant(async () =>
     Promise.all([
       getWorkspaceLicense(),
       prisma.notification.count({ where: { userId: session.user.id, readAt: null } }),
       prisma.user.findUnique({ where: { id: session.user.id }, select: { avatar: true } }),
+      getAgentStatus(session.user.id),
     ]),
   )
   const banner = LICENSE_BANNERS[license.state]
@@ -97,7 +99,22 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </div>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex shrink-0 items-center justify-end border-b border-slate-200 bg-white px-6 py-2">
+        <header className="flex shrink-0 items-center justify-end gap-2 border-b border-slate-200 bg-white px-6 py-2">
+          {/* Desktop-agent status — only for users with monitoring enabled. */}
+          {agent.hasToken && (
+            <Link
+              href="/agent"
+              className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${
+                agent.connected
+                  ? 'bg-green-100 text-green-700'
+                  : 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+              }`}
+              title={agent.connected ? 'Desktop monitoring is active' : 'Set up the desktop monitoring agent'}
+            >
+              <span className={`h-2 w-2 rounded-full ${agent.connected ? 'bg-green-500' : 'bg-amber-500'}`} />
+              {agent.connected ? 'Monitoring on' : 'Set up monitoring'}
+            </Link>
+          )}
           <Link
             href="/notifications"
             className="relative rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100"

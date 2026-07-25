@@ -1,9 +1,10 @@
 import { requirePermission, withTenant } from '@/lib/authz'
 import { getProductivity } from '@/modules/productivity/service'
-import { RowLink } from './row-link'
+import { EnableAllButton, RowLink } from './row-link'
 
 export default async function ProductivityPage() {
-  await requirePermission('reports.view')
+  const session = await requirePermission('reports.view')
+  const canManageHr = session.user.permissions.includes('hr.manage')
   const startOfToday = new Date()
   startOfToday.setHours(0, 0, 0, 0)
   const rows = await withTenant(() => getProductivity(startOfToday))
@@ -17,10 +18,18 @@ export default async function ProductivityPage() {
         tracked; active/idle time and top apps appear when the desktop monitoring agent is connected.
       </p>
       {!anyAgent && (
-        <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          No desktop agents connected yet. Issue an agent token on an employee&apos;s HR profile and
-          install the Zogency desktop agent (requires signed employee consent) to capture screen-time.
-        </p>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          <span>
+            No desktop agents connected yet. Enable monitoring for the team, then each person installs the
+            agent from the &ldquo;Set up monitoring&rdquo; link (top-right) — signed consent required.
+          </span>
+          {canManageHr && <EnableAllButton />}
+        </div>
+      )}
+      {anyAgent && canManageHr && (
+        <div className="mt-3 flex justify-end">
+          <EnableAllButton />
+        </div>
       )}
 
       <div className="mt-6 overflow-hidden rounded-xl border border-slate-200 bg-white">

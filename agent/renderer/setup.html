@@ -58,9 +58,12 @@
     <script>
       const $ = (id) => document.getElementById(id)
       window.agent.getConfig().then((c) => {
-        $('serverUrl').value = c.serverUrl || ''
+        // Prefill from a "Configure automatically" deep link when present.
+        $('serverUrl').value = c.prefillServer || c.serverUrl || ''
+        if (c.prefillToken) $('token').value = c.prefillToken
         $('consent').checked = !!c.consented
         $('autoLaunch').checked = c.autoLaunch !== false
+        if (c.prefillToken) $('msg').style.display = 'none'
       })
       $('save').addEventListener('click', async () => {
         const btn = $('save'), msg = $('msg')

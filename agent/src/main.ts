@@ -24,6 +24,29 @@ let setupWindow: BrowserWindow | null = null
 let config: AgentConfig = loadConfig()
 let timer: NodeJS.Timeout | null = null
 let lastStatus = 'starting…'
+// Filled from a zogency-agent://setup?server=&token= deep link, so the setup
+// window can pre-fill the fields (the employee still ticks consent + Connect).
+let pendingSetup: { server: string; token: string } | null = null
+
+const PROTOCOL = 'zogency-agent'
+
+/** Parse a zogency-agent://setup deep link and open the pre-filled setup window. */
+function handleDeepLink(url: string | undefined): boolean {
+  if (!url || !url.startsWith(`${PROTOCOL}://`)) return false
+  try {
+    const u = new URL(url)
+    const server = u.searchParams.get('server')
+    const token = u.searchParams.get('token')
+    if (server && token) {
+      pendingSetup = { server: server.trim(), token: token.trim() }
+      openSetupWindow()
+      return true
+    }
+  } catch {
+    /* malformed link — ignore */
+  }
+  return false
+}
 
 // A single 16×16 indigo dot as the tray icon (data URI — no asset file needed).
 const TRAY_ICON = nativeImage.createFromDataURL(
@@ -122,13 +145,20 @@ function openSetupWindow() {
   })
 }
 
-// Renderer → main: current config (token never pre-filled back for safety).
-ipcMain.handle('get-config', () => ({
-  serverUrl: config.serverUrl,
-  consented: config.consented,
-  autoLaunch: config.autoLaunch,
-  configured: isConfigured(config),
-}))
+// Renderer → main: current config (saved token never sent back for safety, but
+// a one-time deep-link prefill is, so "Configure automatically" fills the form).
+ipcMain.handle('get-config', () => {
+  const prefill = pendingSetup
+  pendingSetup = null // consume — only prefill once
+  return {
+    serverUrl: config.serverUrl,
+    consented: config.consented,
+    autoLaunch: config.autoLaunch,
+    configured: isConfigured(config),
+    prefillServer: prefill?.server,
+    prefillToken: prefill?.token,
+  }
+})
 
 // Renderer → main: save + test the connection with a single ping.
 ipcMain.handle('save-config', async (_e, data: { serverUrl: string; token: string; consented: boolean; autoLaunch: boolean }) => {
@@ -166,11 +196,25 @@ function applyAutoLaunch() {
   app.setLoginItemSettings({ openAtLogin: config.autoLaunch, openAsHidden: true })
 }
 
+// Register the custom protocol so the browser's "Configure automatically" button
+// can launch us with the server URL + token.
+app.setAsDefaultProtocolClient(PROTOCOL)
+
+// macOS delivers deep links via open-url.
+app.on('open-url', (event, url) => {
+  event.preventDefault()
+  handleDeepLink(url)
+})
+
 // Single-instance: focus setup if launched twice.
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
-  app.on('second-instance', () => openSetupWindow())
+  // Windows/Linux deliver the deep link as an argv on the second launch.
+  app.on('second-instance', (_e, argv) => {
+    const link = argv.find((a) => a.startsWith(`${PROTOCOL}://`))
+    if (!handleDeepLink(link)) openSetupWindow()
+  })
 
   app.whenReady().then(() => {
     if (process.platform === 'darwin') app.dock?.hide() // tray-only on macOS
@@ -178,7 +222,11 @@ if (!app.requestSingleInstanceLock()) {
     rebuildTray()
     applyAutoLaunch()
 
-    if (!isConfigured(config)) {
+    // First-launch deep link (Windows/Linux) arrives in this process's argv.
+    const link = process.argv.find((a) => a.startsWith(`${PROTOCOL}://`))
+    if (link) {
+      handleDeepLink(link)
+    } else if (!isConfigured(config)) {
       openSetupWindow()
     } else {
       scheduleTicker()

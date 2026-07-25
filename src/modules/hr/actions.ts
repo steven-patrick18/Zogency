@@ -364,6 +364,35 @@ export async function revokeAgentTokenAction(formData: FormData) {
   revalidatePath('/hr/employees')
 }
 
+/** Issue an agent token for every active employee who doesn't have one yet. */
+export async function enableMonitoringForAllAction(_p: S, _fd: FormData): Promise<S> {
+  await requirePermission('hr.manage')
+  const { randomBytes } = await import('node:crypto')
+  const enabled = await withTenant(async () => {
+    const employees = await prisma.employee.findMany({
+      where: { status: { not: 'exited' } },
+      select: { userId: true },
+    })
+    const userIds = employees.map((e) => e.userId)
+    const toEnable = await prisma.user.findMany({
+      where: { id: { in: userIds }, status: 'active', agentToken: null },
+      select: { id: true },
+    })
+    for (const u of toEnable) {
+      await prisma.user.update({
+        where: { id: u.id },
+        data: { agentToken: `zga_${randomBytes(24).toString('hex')}` },
+      })
+    }
+    if (toEnable.length > 0) {
+      await audit('agent.bulk_enabled', 'user', null, null, { count: toEnable.length })
+    }
+    return toEnable.length
+  })
+  revalidatePath('/productivity')
+  return { success: enabled === 0 ? 'Everyone already has monitoring enabled.' : `Monitoring enabled for ${enabled} employee(s). They set it up from the Set up monitoring link.` }
+}
+
 // ── Leave policy & company calendar (admin-managed) ─────────────────────────
 
 export async function saveLeaveTypeAction(_p: S, formData: FormData): Promise<S> {
