@@ -89,6 +89,16 @@ export function accrualDueMonths(
   return Math.min(12, Math.max(0, currentMonth - startMonth + 1))
 }
 
+/** Days carried into the next year: unused balance, capped at the type's max. */
+export function carryForwardDays(
+  prev: { available: number; used: number },
+  carryForwardMax: number,
+): number {
+  if (carryForwardMax <= 0) return 0
+  const remaining = Math.max(0, prev.available - prev.used)
+  return Math.min(remaining, carryForwardMax)
+}
+
 export function assessLeave(
   req: { fromOn: Date; toOn: Date; isEmergency?: boolean },
   type: LeaveRuleType,

@@ -417,6 +417,7 @@ export async function saveLeaveTypeAction(_p: S, formData: FormData): Promise<S>
           typeId: type.id,
           year,
           available: rules.accrualPerMonth > 0 ? 0 : annualQuota,
+          openingBalance: rules.accrualPerMonth > 0 ? 0 : annualQuota,
         }),
       })
     }

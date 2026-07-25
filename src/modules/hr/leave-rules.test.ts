@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { accrualDueMonths, assessLeave, type LeaveContext, type LeaveRuleType } from './leave-rules'
+import { accrualDueMonths, assessLeave, carryForwardDays, type LeaveContext, type LeaveRuleType } from './leave-rules'
 
 const d = (s: string) => new Date(`${s}T00:00:00.000Z`)
 
@@ -132,5 +132,20 @@ describe('accrualDueMonths', () => {
   it('EL accrues from the confirmation month', () => {
     const emp = { joinedOn: d('2026-01-10'), confirmedOn: d('2026-04-20') }
     expect(accrualDueMonths(ELm, emp, d('2026-07-15'))).toBe(4) // Apr–Jul
+  })
+})
+
+describe('carryForwardDays', () => {
+  it('is 0 when the type does not carry forward (CL)', () => {
+    expect(carryForwardDays({ available: 12, used: 3 }, 0)).toBe(0)
+  })
+  it('carries the unused remainder within the cap', () => {
+    expect(carryForwardDays({ available: 12, used: 2 }, 18)).toBe(10) // 10 unused ≤ 18
+  })
+  it('caps the carry-over at carryForwardMax (EL ≤18)', () => {
+    expect(carryForwardDays({ available: 30, used: 0 }, 18)).toBe(18)
+  })
+  it('never carries a negative balance', () => {
+    expect(carryForwardDays({ available: 2, used: 5 }, 18)).toBe(0)
   })
 })

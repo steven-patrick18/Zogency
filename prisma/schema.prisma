@@ -76,6 +76,7 @@ model TenantSettings {
   // Leave policy caps (strict-management policy 2026) — admin-configurable.
   maxContinuousAbsenceDays Int @default(4) @map("max_continuous_absence_days") // CL+EL+RH+PH+WOFF block cap
   plannedLeaveNoticeDays   Int @default(2) @map("planned_leave_notice_days") // working days' advance notice
+  leaveRolloverYear        Int @default(0) @map("leave_rollover_year") // last year the year-end carry-forward ran INTO
   updatedAt            DateTime @updatedAt @map("updated_at")
 
   tenant Tenant @relation(fields: [tenantId], references: [id])
@@ -1259,6 +1260,7 @@ model LeaveBalance {
   available     Int
   used          Int    @default(0)
   accruedMonths Int    @default(0) @map("accrued_months") // monthly accruals granted this year (0–12)
+  openingBalance Int   @default(0) @map("opening_balance") // carried forward from last year (accrual types) / full quota (fixed types)
 
   employee Employee  @relation(fields: [employeeId], references: [id])
   type     LeaveType @relation(fields: [typeId], references: [id])

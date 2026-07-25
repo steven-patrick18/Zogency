@@ -4,7 +4,7 @@ import { audit } from '@/lib/audit'
 import { requireTenantContext } from '@/lib/db/context'
 import { prisma, scoped } from '@/lib/db/prisma'
 import { notify } from '@/lib/notify'
-import { accrualDueMonths, assessLeave, type LeaveContext, type WoffAdjacency } from './leave-rules'
+import { accrualDueMonths, assessLeave, carryForwardDays, type LeaveContext, type WoffAdjacency } from './leave-rules'
 
 type Result = { ok: true } | { ok: false; error: string }
 
@@ -92,13 +92,11 @@ export async function hireCandidate(
   // pro-rated by runLeaveAccrual below; fixed-quota types are granted in full.
   const year = new Date().getFullYear()
   for (const type of await prisma.leaveType.findMany()) {
+    // Fixed-quota types are granted in full (openingBalance); accrual types
+    // start empty and are filled by the sweep below.
+    const opening = type.accrualPerMonth > 0 ? 0 : type.annualQuota
     await prisma.leaveBalance.create({
-      data: scoped({
-        employeeId: employee.id,
-        typeId: type.id,
-        year,
-        available: type.accrualPerMonth > 0 ? 0 : type.annualQuota,
-      }),
+      data: scoped({ employeeId: employee.id, typeId: type.id, year, available: opening, openingBalance: opening }),
     })
   }
   await runLeaveAccrual() // grant accrued-to-date for the joining month onward
@@ -249,6 +247,58 @@ export async function setWeeklyOff(employeeId: string, days: number[]): Promise<
 }
 
 /**
+ * Year-end carry-forward (FR-4.10). At the first run of a new calendar year,
+ * unused balance from last year is carried into this year — capped per type at
+ * carryForwardMax (e.g. EL ≤18); the rest lapses. Idempotent + concurrency-safe:
+ * an atomic claim on tenantSettings.leaveRolloverYear ensures it runs once/year.
+ * The carried days land in openingBalance so the accrual sweep adds this year's
+ * accrual on top without the annual-quota cap eating the carry-over.
+ */
+export async function runYearEndRollover(now = new Date()): Promise<number> {
+  const year = now.getUTCFullYear()
+  const prevYear = year - 1
+
+  // Atomic claim: only the first caller past the year boundary proceeds.
+  const claim = await prisma.tenantSettings.updateMany({
+    where: { leaveRolloverYear: { lt: year } },
+    data: { leaveRolloverYear: year },
+  })
+  if (claim.count === 0) return 0
+
+  const carryTypes = await prisma.leaveType.findMany({ where: { carryForwardMax: { gt: 0 } } })
+  if (carryTypes.length === 0) return 0
+  const employees = await prisma.employee.findMany({ where: { status: { not: 'exited' } } })
+  let carriedCount = 0
+
+  for (const emp of employees) {
+    for (const type of carryTypes) {
+      const prev = await prisma.leaveBalance.findFirst({
+        where: { employeeId: emp.id, typeId: type.id, year: prevYear },
+      })
+      if (!prev) continue
+      const carried = carryForwardDays(prev, type.carryForwardMax)
+      if (carried === 0) continue
+
+      const existing = await prisma.leaveBalance.findFirst({
+        where: { employeeId: emp.id, typeId: type.id, year },
+      })
+      if (existing) {
+        await prisma.leaveBalance.update({
+          where: { id: existing.id },
+          data: { openingBalance: { increment: carried }, available: { increment: carried } },
+        })
+      } else {
+        await prisma.leaveBalance.create({
+          data: scoped({ employeeId: emp.id, typeId: type.id, year, openingBalance: carried, available: carried }),
+        })
+      }
+      carriedCount++
+    }
+  }
+  return carriedCount
+}
+
+/**
  * Monthly leave accrual (FR-4.10). Idempotent: each balance tracks accruedMonths
  * so re-running only tops up the shortfall. Accrual is pro-rated from the month
  * the employee became eligible (join month this year, or — for confirmation-
@@ -273,10 +323,11 @@ export async function runLeaveAccrual(now = new Date()): Promise<number> {
       })
       if (balance && balance.accruedMonths >= dueMonths) continue
 
-      const already = balance?.accruedMonths ?? 0
-      const grant = (dueMonths - already) * type.accrualPerMonth
-      const base = balance?.available ?? 0
-      const available = Math.min(base + grant, type.annualQuota)
+      // available = carried-forward opening baseline + this year's accrual,
+      // with the accrual (not the total) capped at the annual quota.
+      const opening = balance?.openingBalance ?? 0
+      const accrued = Math.min(dueMonths * type.accrualPerMonth, type.annualQuota)
+      const available = opening + accrued
       if (balance) {
         await prisma.leaveBalance.update({
           where: { id: balance.id },
@@ -294,10 +345,15 @@ export async function runLeaveAccrual(now = new Date()): Promise<number> {
 }
 
 let lastAccrualAt = 0
-/** Opportunistic accrual trigger on HR page loads; at most once/hour per process. */
+/**
+ * Opportunistic leave maintenance on HR page loads; at most once/hour per
+ * process. Rollover first (carry last year's unused into openingBalance), then
+ * accrual (add this year's monthly grants on top).
+ */
 export async function maybeRunLeaveAccrual(): Promise<void> {
   if (Date.now() - lastAccrualAt < 3_600_000) return
   lastAccrualAt = Date.now()
+  await runYearEndRollover()
   await runLeaveAccrual()
 }
 
