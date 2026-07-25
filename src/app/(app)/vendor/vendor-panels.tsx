@@ -12,6 +12,7 @@ import {
   endDemoUserAction,
   type DemoActionState,
 } from '@/modules/vendor/demo-actions'
+import { resetDemoDataAction, type ResetActionState } from '@/modules/vendor/reset-actions'
 
 const field =
   'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none'
@@ -171,6 +172,62 @@ export function DemoAccessCard({ demoUsers }: { demoUsers: DemoUser[] }) {
           ))}
         </ul>
       )}
+    </div>
+  )
+}
+
+export function ResetDemoDataCard() {
+  const [open, setOpen] = useState(false)
+  const [confirm, setConfirm] = useState('')
+  const [state, formAction, pending] = useActionState<ResetActionState, FormData>(resetDemoDataAction, {})
+  const phrase = 'RESET DEMO DATA'
+
+  return (
+    <div className="mt-3 space-y-3">
+      <p className="text-xs text-slate-500">
+        Clears every lead, deal, client, campaign, invoice, ticket and message created during demos, returning
+        the workspace to its freshly-seeded state. The team, roles, departments, settings, license, connected
+        integrations and any demo logins are kept.
+      </p>
+      {!open ? (
+        <button
+          onClick={() => setOpen(true)}
+          className="rounded-lg border border-red-300 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50"
+        >
+          Wipe demo data…
+        </button>
+      ) : (
+        <form action={formAction} className="space-y-3 rounded-xl border border-red-200 bg-red-50/60 p-4">
+          <p className="text-sm text-red-700">
+            This permanently deletes all operational data. It cannot be undone. Type <code className="font-mono font-semibold">{phrase}</code> to confirm.
+          </p>
+          <input
+            name="confirm"
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            placeholder={phrase}
+            className="w-64 rounded-lg border border-red-300 bg-white px-3 py-2 font-mono text-sm focus:border-red-500 focus:outline-none"
+            autoComplete="off"
+          />
+          <Feedback state={state} />
+          <div className="flex gap-2">
+            <button
+              disabled={pending || confirm !== phrase}
+              className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500 disabled:opacity-40"
+            >
+              {pending ? 'Wiping…' : 'Wipe demo data'}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setOpen(false); setConfirm('') }}
+              className="px-2 text-sm text-slate-500 hover:underline"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+      {!open && <Feedback state={state} />}
     </div>
   )
 }

@@ -6,7 +6,7 @@ import { prisma } from '@/lib/db/prisma'
 import { issuerConfigured } from '@/lib/license-issuer'
 import { vendorModeEnabled } from '@/modules/vendor/config'
 import { sweepExpiredDemoUsers } from '@/modules/vendor/demo-actions'
-import { DemoAccessCard, NewClientForm, PublishReleaseForm, RetryForm } from './vendor-panels'
+import { DemoAccessCard, NewClientForm, PublishReleaseForm, ResetDemoDataCard, RetryForm } from './vendor-panels'
 
 const STATUS_STYLES: Record<string, string> = {
   pending: 'bg-slate-200 text-slate-600',
@@ -79,6 +79,11 @@ export default async function VendorPage() {
             expiresAt: u.demoExpiresAt?.toLocaleString() ?? '—',
           }))}
         />
+      </div>
+
+      <div className="mt-6 rounded-xl border border-red-200 bg-white p-5">
+        <h2 className="font-semibold text-slate-900">Reset demo data</h2>
+        <ResetDemoDataCard />
       </div>
 
       <div className="mt-6">
