@@ -152,18 +152,21 @@ export async function requestLeave(
   ])
   if (!type) return { ok: false, error: 'Unknown leave type' }
 
-  // Context for the rule engine: employee weekly-offs, company holidays, and the
-  // employee's other approved/pending leaves (to detect clubbing / overlaps).
+  // Context for the rule engine: employee weekly-offs, company holidays (split
+  // public vs restricted), and the employee's other approved/pending leaves.
   const [holidays, existing] = await Promise.all([
-    prisma.holiday.findMany({ select: { date: true } }),
+    prisma.holiday.findMany({ select: { date: true, kind: true } }),
     prisma.leaveRequest.findMany({
       where: { employeeId, state: { in: ['pending', 'approved'] } },
       include: { type: { select: { name: true } } },
     }),
   ])
+  const dayKey = (d: Date) => d.toISOString().slice(0, 10)
   const ctx: LeaveContext = {
     weeklyOffDays: employee.weeklyOffDays,
-    holidays: new Set(holidays.map((h) => h.date.toISOString().slice(0, 10))),
+    // Only PUBLIC holidays are mandatory days off; restricted ones are optional.
+    holidays: new Set(holidays.filter((h) => h.kind !== 'restricted').map((h) => dayKey(h.date))),
+    restrictedHolidays: new Set(holidays.filter((h) => h.kind === 'restricted').map((h) => dayKey(h.date))),
     existingLeaves: existing.map((l) => ({ fromOn: l.fromOn, toOn: l.toOn, typeId: l.typeId, typeName: l.type.name })),
     maxContinuousAbsenceDays: settings?.maxContinuousAbsenceDays ?? 4,
     plannedNoticeDays: settings?.plannedLeaveNoticeDays ?? 2,
@@ -179,6 +182,7 @@ export async function requestLeave(
       woffAdjacency: type.woffAdjacency as WoffAdjacency,
       standaloneOnly: type.standaloneOnly,
       clubbableWithLeave: type.clubbableWithLeave,
+      requiresRestrictedHoliday: type.requiresRestrictedHoliday,
     },
     ctx,
   )

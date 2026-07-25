@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { requirePermission, withTenant } from '@/lib/authz'
 import { prisma } from '@/lib/db/prisma'
+import { esignEnabled } from '@/modules/deals/esign'
 import {
   ContractPanel,
   DealStageActions,
@@ -34,18 +35,19 @@ export default async function DealRoomPage({ params }: { params: Promise<{ id: s
     })
     if (!deal) return null
     const sow = await prisma.sowDeliverable.findMany({ where: { dealId: id }, orderBy: { createdAt: 'asc' } })
-    const [templates, approvals, users] = await Promise.all([
+    const [templates, approvals, users, esign] = await Promise.all([
       prisma.proposalTemplate.findMany({ where: { active: true }, orderBy: { name: 'asc' } }),
       prisma.approvalRequest.findMany({
         where: { entityType: 'proposal_version', entityId: { in: deal.proposals.map((p) => p.id) } },
         orderBy: { requestedAt: 'desc' },
       }),
       prisma.user.findMany({ select: { id: true, name: true } }),
+      esignEnabled(),
     ])
-    return { deal, sow, templates, approvals, users }
+    return { deal, sow, templates, approvals, users, esign }
   })
   if (!data) notFound()
-  const { deal, sow, templates, approvals, users } = data
+  const { deal, sow, templates, approvals, users, esign } = data
   const userName = new Map(users.map((u) => [u.id, u.name]))
   const proposal = deal.proposals[0]
   const canApprove = session.user.permissions.includes('deals.approve_discount')
@@ -142,6 +144,7 @@ export default async function DealRoomPage({ params }: { params: Promise<{ id: s
                 : null
             }
             stage={deal.stage}
+            esignEnabled={esign}
           />
         </div>
       </div>

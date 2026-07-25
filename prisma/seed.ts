@@ -304,6 +304,7 @@ async function main() {
     clubbableWithLeave: boolean
     encashable: boolean
     requiresConfirmation: boolean
+    requiresRestrictedHoliday?: boolean
   }
   const LEAVE_TYPES: LeaveSeed[] = [
     // CL: 1/mo, 12/yr, no carry, ≤2 consecutive but only 1 if adjacent to a WOFF,
@@ -312,8 +313,9 @@ async function main() {
     // EL: 1/mo after confirmation, 12/yr, carry ≤18, ≤4 consecutive, never adjacent
     // to a WOFF, never clubbed with CL/RH, encashable only with approval.
     { name: 'Earned Leave', code: 'EL', annualQuota: 12, accrualPerMonth: 1, carryForwardMax: 18, maxConsecutive: 4, woffAdjacency: 'forbidden', standaloneOnly: false, clubbableWithLeave: false, encashable: true, requiresConfirmation: true },
-    // RH: 4/yr, standalone single days only, never clubbed, lapses.
-    { name: 'Restricted Holiday', code: 'RH', annualQuota: 4, accrualPerMonth: 0, carryForwardMax: 0, maxConsecutive: 1, woffAdjacency: 'allowed', standaloneOnly: true, clubbableWithLeave: false, encashable: false, requiresConfirmation: false },
+    // RH: 4/yr, standalone single days only, never clubbed, lapses; must land on
+    // a published restricted-holiday date from the company calendar.
+    { name: 'Restricted Holiday', code: 'RH', annualQuota: 4, accrualPerMonth: 0, carryForwardMax: 0, maxConsecutive: 1, woffAdjacency: 'allowed', standaloneOnly: true, clubbableWithLeave: false, encashable: false, requiresConfirmation: false, requiresRestrictedHoliday: true },
   ]
   for (const t of LEAVE_TYPES) {
     const data = {
@@ -328,6 +330,7 @@ async function main() {
       clubbableWithLeave: t.clubbableWithLeave,
       encashable: t.encashable,
       requiresConfirmation: t.requiresConfirmation,
+      requiresRestrictedHoliday: t.requiresRestrictedHoliday ?? false,
     }
     await prisma.leaveType.upsert({
       where: { tenantId_name: { tenantId: tenant.id, name: t.name } },

@@ -389,6 +389,7 @@ export async function saveLeaveTypeAction(_p: S, formData: FormData): Promise<S>
     clubbableWithLeave: formData.get('clubbableWithLeave') === 'on',
     encashable: formData.get('encashable') === 'on',
     requiresConfirmation: formData.get('requiresConfirmation') === 'on',
+    requiresRestrictedHoliday: formData.get('requiresRestrictedHoliday') === 'on',
   }
 
   await withTenant(async () => {
@@ -483,11 +484,12 @@ export async function addHolidayAction(_p: S, formData: FormData): Promise<S> {
   await requirePermission('hr.manage')
   const date = String(formData.get('date') ?? '')
   const name = String(formData.get('name') ?? '').trim()
+  const kind = formData.get('kind') === 'restricted' ? 'restricted' : 'public'
   if (!date || !name) return { error: 'Date and holiday name are required' }
   try {
     await withTenant(async () => {
-      const holiday = await prisma.holiday.create({ data: scoped({ date: new Date(date), name }) })
-      await audit('holiday.added', 'holiday', holiday.id, null, { date, name })
+      const holiday = await prisma.holiday.create({ data: scoped({ date: new Date(date), name, kind }) })
+      await audit('holiday.added', 'holiday', holiday.id, null, { date, name, kind })
     })
   } catch (err: unknown) {
     if ((err as { code?: string }).code === 'P2002') return { error: 'A holiday already exists on that date' }

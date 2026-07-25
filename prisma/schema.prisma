@@ -1243,6 +1243,7 @@ model LeaveType {
   encashable           Boolean @default(false) // may be encashed (EL only, with approval)
   requiresConfirmation Boolean @default(false) @map("requires_confirmation") // accrues only after confirmation (EL)
   lapses               Boolean @default(true) // unused balance lapses at year end
+  requiresRestrictedHoliday Boolean @default(false) @map("requires_restricted_holiday") // RH: must land on a published restricted-holiday date
 
   balances LeaveBalance[]
   requests LeaveRequest[]
@@ -1295,6 +1296,7 @@ model Holiday {
   tenantId String   @map("tenant_id") @db.Uuid
   date     DateTime @db.Date
   name     String
+  kind     String   @default("public") // public = mandatory day off | restricted = optional, employee picks via RH leave
 
   @@unique([tenantId, date])
   @@map("holidays")

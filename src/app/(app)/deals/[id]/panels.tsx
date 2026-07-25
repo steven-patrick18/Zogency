@@ -9,6 +9,7 @@ import {
   markLostAction,
   recordContractAction,
   removeSowAction,
+  sendForSignatureAction,
   sendProposalAction,
   verbalCommitAction,
   type DealActionState,
@@ -274,19 +275,22 @@ export function ContractPanel({
   dealId,
   contract,
   stage,
+  esignEnabled,
 }: {
   dealId: string
   contract: { status: string; signedAt: string | null; evidenceNote: string | null } | null
   stage: string
+  esignEnabled: boolean
 }) {
   const [state, formAction, pending] = useActionState<DealActionState, FormData>(recordContractAction, {})
+  const [signState, signAction, signing] = useActionState<DealActionState, FormData>(sendForSignatureAction, {})
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-5">
       <div className="flex items-center justify-between">
         <h2 className="font-semibold text-slate-900">Contract & closing</h2>
-        <span className="text-[11px] text-slate-400" title="E-sign integration activates on the doc 11 Q2 vendor decision">
-          logged-approval fallback
+        <span className="text-[11px] text-slate-400">
+          {esignEnabled ? 'Zoho Sign connected' : 'logged-approval fallback'}
         </span>
       </div>
       {contract?.status === 'signed' ? (
@@ -297,21 +301,41 @@ export function ContractPanel({
       ) : stage === 'lost' ? (
         <p className="mt-3 text-sm text-slate-400">Deal is lost.</p>
       ) : (
-        <form action={formAction} className="mt-3 space-y-2">
-          <input type="hidden" name="dealId" value={dealId} />
-          <textarea
-            name="evidenceNote"
-            rows={2}
-            required
-            placeholder="How was the contract executed? (e-sign envelope ref, or written-approval evidence) *"
-            className={field}
-          />
-          <input name="finalValue" type="number" step="0.01" placeholder="Final deal value ₹ (defaults to sent proposal)" className={field} />
-          <Feedback state={state} />
-          <button disabled={pending} className="rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-500 disabled:opacity-50">
-            {pending ? 'Recording…' : 'Record signed contract → Close Won'}
-          </button>
-        </form>
+        <>
+          {/* E-signature (Zoho Sign) — the preferred path when connected. */}
+          {esignEnabled && (
+            <form action={signAction} className="mt-3 rounded-lg border border-indigo-200 bg-indigo-50/50 p-3">
+              <input type="hidden" name="dealId" value={dealId} />
+              {contract?.status === 'sent' ? (
+                <p className="text-sm text-indigo-800">Sent for e-signature — awaiting the client. Zoho will notify us on signing.</p>
+              ) : (
+                <p className="text-sm text-slate-600">Send the contract to the client to sign electronically.</p>
+              )}
+              <Feedback state={signState} />
+              <button disabled={signing} className="mt-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50">
+                {signing ? 'Sending…' : contract?.status === 'sent' ? 'Resend for e-signature' : 'Send for e-signature (Zoho Sign)'}
+              </button>
+            </form>
+          )}
+
+          {/* Logged signature — manual evidence, always available as a fallback. */}
+          <form action={formAction} className="mt-3 space-y-2">
+            <input type="hidden" name="dealId" value={dealId} />
+            <p className="text-xs font-medium text-slate-500">Or record a manually-executed signature:</p>
+            <textarea
+              name="evidenceNote"
+              rows={2}
+              required
+              placeholder="How was the contract executed? (e-sign envelope ref, or written-approval evidence) *"
+              className={field}
+            />
+            <input name="finalValue" type="number" step="0.01" placeholder="Final deal value ₹ (defaults to sent proposal)" className={field} />
+            <Feedback state={state} />
+            <button disabled={pending} className="rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-500 disabled:opacity-50">
+              {pending ? 'Recording…' : 'Record signed contract → Close Won'}
+            </button>
+          </form>
+        </>
       )}
     </div>
   )

@@ -14,6 +14,7 @@ type DocType = {
   clubbableWithLeave: boolean
   encashable: boolean
   requiresConfirmation: boolean
+  requiresRestrictedHoliday?: boolean
 }
 
 function woffClause(t: DocType): string | null {
@@ -30,6 +31,7 @@ function ruleLines(t: DocType): string[] {
   if (t.maxConsecutive > 0) lines.push(`A maximum of ${t.maxConsecutive} consecutive day(s) may be availed at a time.`)
   if (t.standaloneOnly) lines.push('Must be taken as standalone day(s) only — not clubbed with any other leave type.')
   else if (!t.clubbableWithLeave) lines.push('Shall not be clubbed with any other leave type.')
+  if (t.requiresRestrictedHoliday) lines.push('May be availed only on a Restricted Holiday published in the company calendar.')
   const w = woffClause(t)
   if (w) lines.push(w)
   lines.push(t.encashable ? 'Encashable only with specific written approval of Management.' : 'Not encashable under any circumstances.')

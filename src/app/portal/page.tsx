@@ -36,7 +36,12 @@ export default async function PortalOverviewPage() {
     prismaUnscoped.project.findMany({
       where: scope,
       orderBy: { createdAt: 'desc' },
-      include: { tasks: { select: { status: true } } },
+      include: {
+        tasks: {
+          select: { id: true, title: true, status: true, deadline: true },
+          orderBy: [{ status: 'asc' }, { deadline: 'asc' }],
+        },
+      },
     }),
     prismaUnscoped.clientHealthScore.findFirst({
       where: scope,
@@ -77,24 +82,45 @@ export default async function PortalOverviewPage() {
         </ul>
       </section>
 
-      <div className="grid gap-6 md:grid-cols-2">
-        {/* Projects */}
-        <section className="rounded-xl border border-slate-200 bg-white p-5">
-          <h3 className="font-semibold text-slate-900">Projects</h3>
-          <ul className="mt-3 space-y-2 text-sm">
-            {projects.map((p) => {
-              const done = p.tasks.filter((t) => t.status === 'done').length
-              return (
-                <li key={p.id} className="flex items-center justify-between">
-                  <span className="text-slate-800">{p.name}</span>
-                  <span className="text-xs text-slate-500">{done}/{p.tasks.length} tasks done</span>
-                </li>
-              )
-            })}
-            {projects.length === 0 && <li className="text-slate-400">No projects yet.</li>}
-          </ul>
-        </section>
+      {/* Projects with their task lists */}
+      <section className="rounded-xl border border-slate-200 bg-white p-5">
+        <h3 className="font-semibold text-slate-900">Projects &amp; tasks</h3>
+        {projects.length === 0 && <p className="mt-3 text-sm text-slate-400">No projects yet.</p>}
+        <div className="mt-3 space-y-5">
+          {projects.map((p) => {
+            const done = p.tasks.filter((t) => t.status === 'done').length
+            const pct = p.tasks.length ? Math.round((done / p.tasks.length) * 100) : 0
+            return (
+              <div key={p.id}>
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-slate-800">{p.name}</span>
+                  <span className="text-xs text-slate-500">{done}/{p.tasks.length} done</span>
+                </div>
+                <div className="mt-1 h-1.5 w-full rounded-full bg-slate-100">
+                  <div className="h-1.5 rounded-full bg-emerald-500" style={{ width: `${pct}%` }} />
+                </div>
+                <ul className="mt-2 space-y-1.5">
+                  {p.tasks.map((t) => (
+                    <li key={t.id} className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-1.5 text-sm">
+                      <span className="flex items-center gap-2">
+                        <span className={`h-2 w-2 rounded-full ${t.status === 'done' ? 'bg-emerald-500' : t.status === 'in_progress' ? 'bg-amber-400' : 'bg-slate-300'}`} />
+                        <span className={t.status === 'done' ? 'text-slate-400 line-through' : 'text-slate-700'}>{t.title}</span>
+                      </span>
+                      <span className="flex items-center gap-2 text-xs text-slate-400">
+                        <span className="capitalize">{t.status.replace('_', ' ')}</span>
+                        {t.deadline && <span>· due {t.deadline.toLocaleDateString('en-IN')}</span>}
+                      </span>
+                    </li>
+                  ))}
+                  {p.tasks.length === 0 && <li className="px-1 text-xs text-slate-400">No tasks yet.</li>}
+                </ul>
+              </div>
+            )
+          })}
+        </div>
+      </section>
 
+      <div className="grid gap-6 md:grid-cols-1">
         {/* Health & KPIs */}
         <section className="rounded-xl border border-slate-200 bg-white p-5">
           <h3 className="font-semibold text-slate-900">Account health</h3>

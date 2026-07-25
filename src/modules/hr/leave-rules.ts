@@ -21,13 +21,15 @@ export type LeaveRuleType = {
   woffAdjacency: WoffAdjacency
   standaloneOnly: boolean
   clubbableWithLeave: boolean
+  requiresRestrictedHoliday?: boolean // must fall on a published restricted-holiday date (RH)
 }
 
 export type ExistingLeave = { fromOn: Date; toOn: Date; typeId: string; typeName: string }
 
 export type LeaveContext = {
   weeklyOffDays: number[] // 0=Sun … 6=Sat
-  holidays: Set<string> // 'YYYY-MM-DD' UTC keys
+  holidays: Set<string> // PUBLIC holidays only — 'YYYY-MM-DD' UTC keys (mandatory days off)
+  restrictedHolidays: Set<string> // published optional holidays employees may take as RH
   existingLeaves: ExistingLeave[] // employee's approved + pending leaves (excluding this request)
   maxContinuousAbsenceDays: number
   plannedNoticeDays: number
@@ -122,6 +124,20 @@ export function assessLeave(
   // Standalone-only (RH): single day, never combined.
   if (type.standaloneOnly && leaveDays > 1) {
     return { ok: false, error: `${type.name} must be taken as a single standalone day.` }
+  }
+
+  // Restricted-holiday-linked (RH): every applied day must be a published
+  // restricted holiday from the company calendar.
+  if (type.requiresRestrictedHoliday) {
+    for (let cur = req.fromOn; cur <= req.toOn; cur = new Date(cur.getTime() + DAY)) {
+      if (isWoff(cur, ctx) || isHoliday(cur, ctx)) continue // WOFF/public holiday spends nothing
+      if (!ctx.restrictedHolidays.has(key(cur))) {
+        return {
+          ok: false,
+          error: `${type.name} can only be taken on a published restricted-holiday date. ${key(cur)} is not one — HR maintains the list in the holiday calendar.`,
+        }
+      }
+    }
   }
 
   // Advance notice for planned leave.

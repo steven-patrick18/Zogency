@@ -7,6 +7,7 @@ const d = (s: string) => new Date(`${s}T00:00:00.000Z`)
 const baseCtx = (over: Partial<LeaveContext> = {}): LeaveContext => ({
   weeklyOffDays: [0, 6],
   holidays: new Set(),
+  restrictedHolidays: new Set(),
   existingLeaves: [],
   maxContinuousAbsenceDays: 4,
   plannedNoticeDays: 2,
@@ -147,5 +148,20 @@ describe('carryForwardDays', () => {
   })
   it('never carries a negative balance', () => {
     expect(carryForwardDays({ available: 2, used: 5 }, 18)).toBe(0)
+  })
+})
+
+describe('assessLeave — restricted-holiday link (RH)', () => {
+  const RHlinked: LeaveRuleType = { id: 'rh', name: 'Restricted Holiday', maxConsecutive: 1, woffAdjacency: 'allowed', standaloneOnly: true, clubbableWithLeave: false, requiresRestrictedHoliday: true }
+
+  it('rejects RH on a date that is not a published restricted holiday', () => {
+    const r = assessLeave({ fromOn: d('2026-07-08'), toOn: d('2026-07-08') }, RHlinked, baseCtx())
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toMatch(/restricted-holiday/i)
+  })
+  it('allows RH on a published restricted-holiday date', () => {
+    const ctx = baseCtx({ restrictedHolidays: new Set(['2026-07-08']) })
+    const r = assessLeave({ fromOn: d('2026-07-08'), toOn: d('2026-07-08') }, RHlinked, ctx)
+    expect(r.ok).toBe(true)
   })
 })

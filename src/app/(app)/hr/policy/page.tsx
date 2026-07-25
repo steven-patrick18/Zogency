@@ -59,6 +59,7 @@ export default async function PolicyPage() {
                       clubbableWithLeave: t.clubbableWithLeave,
                       encashable: t.encashable,
                       requiresConfirmation: t.requiresConfirmation,
+                      requiresRestrictedHoliday: t.requiresRestrictedHoliday,
                       covered: t.balances.filter((b) => b.year === year).length,
                     }}
                   />
@@ -123,16 +124,24 @@ export default async function PolicyPage() {
 
         <div className="rounded-xl border border-slate-200 bg-white p-5">
           <h2 className="font-semibold text-slate-900">Company holiday calendar</h2>
-          <p className="mt-0.5 text-xs text-slate-400">Applies to attendance and leave planning.</p>
+          <p className="mt-0.5 text-xs text-slate-400">
+            <span className="font-medium text-slate-500">Public</span> = mandatory day off for everyone.{' '}
+            <span className="font-medium text-slate-500">Restricted</span> = optional; employees pick from these
+            via Restricted-Holiday leave (capped by the RH quota).
+          </p>
           {canManage && <HolidayForm />}
           <ul className="mt-4 space-y-2 text-sm">
             {data.holidays.length === 0 && <li className="text-slate-400">No holidays added yet.</li>}
             {data.holidays.map((h) => {
               const past = h.date < today
+              const restricted = h.kind === 'restricted'
               return (
                 <li key={h.id} className="flex items-center justify-between">
                   <span className={past ? 'text-slate-400 line-through' : 'text-slate-800'}>
                     {h.date.toDateString()} — {h.name}
+                    <span className={`ml-2 rounded px-1.5 py-0.5 text-[11px] font-medium ${restricted ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
+                      {restricted ? 'Restricted' : 'Public'}
+                    </span>
                   </span>
                   {canManage && (
                     <form action={removeHolidayAction}>
@@ -160,6 +169,7 @@ export default async function PolicyPage() {
           clubbableWithLeave: t.clubbableWithLeave,
           encashable: t.encashable,
           requiresConfirmation: t.requiresConfirmation,
+          requiresRestrictedHoliday: t.requiresRestrictedHoliday,
         }))}
         cap={cap}
         notice={notice}

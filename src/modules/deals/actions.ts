@@ -14,6 +14,7 @@ import {
   sendProposal,
   setVerbalCommit,
 } from './service'
+import { sendContractForSignature } from './esign'
 
 export type DealActionState = { error?: string; success?: string }
 
@@ -172,4 +173,15 @@ export async function recordContractAction(_p: DealActionState, formData: FormDa
   revalidatePath('/leads')
   revalidatePath('/pipeline')
   return result.ok ? { success: 'Contract recorded — deal Closed-Won 🎉' } : { error: result.error }
+}
+
+/** Send the contract to the client for e-signature via Zoho Sign (if connected). */
+export async function sendForSignatureAction(_p: DealActionState, formData: FormData): Promise<DealActionState> {
+  await requirePermission('deals.edit')
+  const dealId = z.string().uuid().parse(formData.get('dealId'))
+  const result = await withTenant(() => sendContractForSignature(dealId))
+  revalidatePath(`/deals/${dealId}`)
+  return result.ok
+    ? { success: 'Sent to the client for e-signature — you’ll be notified when they sign.' }
+    : { error: result.error }
 }

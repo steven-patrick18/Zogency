@@ -38,6 +38,7 @@ export type LeaveTypeData = {
   clubbableWithLeave: boolean
   encashable: boolean
   requiresConfirmation: boolean
+  requiresRestrictedHoliday: boolean
   covered: number
 }
 
@@ -53,6 +54,7 @@ export function LeaveTypeRow({ t }: { t: LeaveTypeData }) {
   if (t.maxConsecutive) chips.push(`≤${t.maxConsecutive} at a time`)
   if (t.standaloneOnly) chips.push('standalone')
   if (!t.clubbableWithLeave) chips.push('no clubbing')
+  if (t.requiresRestrictedHoliday) chips.push('restricted-holiday only')
   if (t.woffAdjacency !== 'allowed') chips.push(WOFF_LABEL[t.woffAdjacency])
 
   return (
@@ -112,6 +114,9 @@ export function LeaveTypeRow({ t }: { t: LeaveTypeData }) {
           </label>
           <label className="flex items-center gap-2">
             <input type="checkbox" name="encashable" defaultChecked={t.encashable} /> Encashable (with approval)
+          </label>
+          <label className="col-span-2 flex items-center gap-2">
+            <input type="checkbox" name="requiresRestrictedHoliday" defaultChecked={t.requiresRestrictedHoliday} /> Must fall on a published restricted-holiday date
           </label>
           <div className="col-span-2 flex items-center gap-2">
             <button disabled={pending} className="rounded-lg bg-indigo-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-50">
@@ -181,7 +186,11 @@ export function HolidayForm() {
   return (
     <form action={formAction} className="mt-3 flex flex-wrap items-center gap-2">
       <input name="date" type="date" required className={field} />
-      <input name="name" required placeholder="Holiday name (e.g. Diwali)" className={`${field} w-52`} />
+      <input name="name" required placeholder="Holiday name (e.g. Diwali)" className={`${field} w-44`} />
+      <select name="kind" defaultValue="public" className={field} title="Holiday type">
+        <option value="public">Public (mandatory)</option>
+        <option value="restricted">Restricted (optional)</option>
+      </select>
       <button disabled={pending} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50">
         {pending ? 'Adding…' : 'Add holiday'}
       </button>
