@@ -77,6 +77,7 @@ model TenantSettings {
   maxContinuousAbsenceDays Int @default(4) @map("max_continuous_absence_days") // CL+EL+RH+PH+WOFF block cap
   plannedLeaveNoticeDays   Int @default(2) @map("planned_leave_notice_days") // working days' advance notice
   leaveRolloverYear        Int @default(0) @map("leave_rollover_year") // last year the year-end carry-forward ran INTO
+  leavePolicyDoc           String? @map("leave_policy_doc") // HR-editable policy prose (markdown); null = show the auto-generated one
   updatedAt            DateTime @updatedAt @map("updated_at")
 
   tenant Tenant @relation(fields: [tenantId], references: [id])

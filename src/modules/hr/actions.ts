@@ -474,6 +474,21 @@ export async function setWeeklyOffAction(_p: S, formData: FormData): Promise<S> 
   return r.ok ? { success: 'Weekly-offs updated.' } : { error: r.error }
 }
 
+/** Save the HR-editable leave-policy document (markdown). Empty ⇒ revert to auto. */
+export async function saveLeavePolicyDocAction(_p: S, formData: FormData): Promise<S> {
+  const session = await requirePermission('hr.manage')
+  const doc = String(formData.get('doc') ?? '').trim()
+  await withTenant(async () => {
+    await prisma.tenantSettings.update({
+      where: { tenantId: session.user.tenantId },
+      data: { leavePolicyDoc: doc || null },
+    })
+    await audit('leave_policy_doc.saved', 'tenant_settings', session.user.tenantId, null, { length: doc.length, custom: !!doc })
+  })
+  revalidatePath('/hr/policy')
+  return { success: doc ? 'Leave policy saved.' : 'Reverted to the auto-generated policy.' }
+}
+
 /** Tenant-level leave caps: continuous-absence cap + planned-leave notice. */
 export async function saveLeavePolicyAction(_p: S, formData: FormData): Promise<S> {
   const session = await requirePermission('hr.manage')

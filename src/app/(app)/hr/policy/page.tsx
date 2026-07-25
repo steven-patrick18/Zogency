@@ -3,8 +3,9 @@
 import { requirePermission, withTenant } from '@/lib/authz'
 import { prisma } from '@/lib/db/prisma'
 import { removeHolidayAction } from '@/modules/hr/actions'
+import { generateLeavePolicyMarkdown } from '@/modules/hr/leave-policy-doc'
 import { HolidayForm, LeaveCapsForm, LeaveTypeForm, LeaveTypeRow } from './policy-panels'
-import { LeavePolicyDocument } from './policy-document'
+import { PolicyDocEditor, PolicyMarkdown } from './policy-doc-panels'
 
 export default async function PolicyPage() {
   const session = await requirePermission('hr.view')
@@ -156,24 +157,50 @@ export default async function PolicyPage() {
         </div>
       </div>
 
-      <LeavePolicyDocument
-        types={data.leaveTypes.map((t) => ({
-          name: t.name,
-          code: t.code,
-          annualQuota: t.annualQuota,
-          accrualPerMonth: t.accrualPerMonth,
-          carryForwardMax: t.carryForwardMax,
-          maxConsecutive: t.maxConsecutive,
-          woffAdjacency: t.woffAdjacency,
-          standaloneOnly: t.standaloneOnly,
-          clubbableWithLeave: t.clubbableWithLeave,
-          encashable: t.encashable,
-          requiresConfirmation: t.requiresConfirmation,
-          requiresRestrictedHoliday: t.requiresRestrictedHoliday,
-        }))}
-        cap={cap}
-        notice={notice}
-      />
+      {(() => {
+        const generated = generateLeavePolicyMarkdown(
+          data.leaveTypes.map((t) => ({
+            name: t.name,
+            code: t.code,
+            annualQuota: t.annualQuota,
+            accrualPerMonth: t.accrualPerMonth,
+            carryForwardMax: t.carryForwardMax,
+            maxConsecutive: t.maxConsecutive,
+            woffAdjacency: t.woffAdjacency,
+            standaloneOnly: t.standaloneOnly,
+            clubbableWithLeave: t.clubbableWithLeave,
+            encashable: t.encashable,
+            requiresConfirmation: t.requiresConfirmation,
+            requiresRestrictedHoliday: t.requiresRestrictedHoliday,
+          })),
+          cap,
+          notice,
+        )
+        const custom = data.settings?.leavePolicyDoc ?? null
+        return (
+          <div className="rounded-xl border border-slate-200 bg-white p-6">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-lg font-bold text-slate-900">Leave Policy</h2>
+              <span className="text-xs text-slate-400">
+                {custom ? 'Custom policy' : 'Auto-generated from the rules above'}
+                {canManage ? ' · editable' : ''}
+              </span>
+            </div>
+            <p className="mt-1 text-xs text-slate-400">
+              {canManage
+                ? 'Edit your agency’s policy below. Start from the auto-generated version (which matches what the system enforces) and adjust the wording.'
+                : 'Your organisation’s leave policy.'}
+            </p>
+            <div className="mt-4">
+              {canManage ? (
+                <PolicyDocEditor initial={custom ?? generated} generated={generated} />
+              ) : (
+                <PolicyMarkdown text={custom ?? generated} />
+              )}
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }
