@@ -68,7 +68,8 @@ export default async function VendorPage() {
       <div className="mt-6 rounded-xl border border-slate-200 bg-white p-5">
         <h2 className="font-semibold text-slate-900">Demo access</h2>
         <p className="text-xs text-slate-500">
-          Disposable demo logins — full product access, no vendor console, auto-disabled at expiry.
+          Disposable demo logins — full product access (add users, configure the org, connect APIs), no
+          vendor console, auto-disabled at expiry. Each starts from a fresh install by default.
         </p>
         <DemoAccessCard
           demoUsers={demoUsers.map((u) => ({
@@ -82,7 +83,7 @@ export default async function VendorPage() {
       </div>
 
       <div className="mt-6 rounded-xl border border-red-200 bg-white p-5">
-        <h2 className="font-semibold text-slate-900">Reset demo data</h2>
+        <h2 className="font-semibold text-slate-900">Reset to fresh install</h2>
         <ResetDemoDataCard />
       </div>
 

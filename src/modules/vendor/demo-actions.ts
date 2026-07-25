@@ -11,6 +11,7 @@ import { audit } from '@/lib/audit'
 import { requirePermission, withTenant } from '@/lib/authz'
 import { prisma, scoped } from '@/lib/db/prisma'
 import { vendorModeEnabled } from './config'
+import { freshInstallReset } from './reset-actions'
 
 export type DemoActionState = { error?: string; success?: string; credentials?: { email: string; password: string; expiresAt: string } }
 
@@ -24,6 +25,11 @@ export async function createDemoUserAction(_p: DemoActionState, formData: FormDa
   await requirePermission('vendor.manage')
   if (!vendorModeEnabled()) return { error: 'Vendor mode is not enabled' }
   const hours = z.coerce.number().int().min(1).max(720).default(24).parse(formData.get('hours') || 24)
+
+  // Fresh-install demos (default): wipe the workspace to a brand-new install so
+  // the prospect starts from an empty org and configures everything themselves.
+  const fresh = formData.get('fresh') !== 'off'
+  if (fresh) await freshInstallReset()
 
   const result = await withTenant(async () => {
     const demoRole = await prisma.role.findFirst({ where: { name: 'Demo Admin' } })

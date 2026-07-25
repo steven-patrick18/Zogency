@@ -45,7 +45,10 @@ const PERMISSIONS: Array<[key: string, module: string, description: string]> = [
 
 // System roles → permission keys (doc 01 §3). Admin gets all EXCEPT the
 // vendor console — that needs the explicit Vendor Owner role (master server).
-// Demo Admin: full product access for prospect demos, no vendor, no user admin.
+// Demo Admin: full product access for prospect demos — everything the Admin can
+// do (add users, configure the org, connect integrations) EXCEPT the vendor
+// console. Demos are disposable fresh installs, so there is nothing to protect
+// from user administration.
 const ROLES: Record<string, string[] | 'ALL_BUT_VENDOR'> = {
   Admin: 'ALL_BUT_VENDOR',
   'Vendor Owner': ['vendor.manage'],
@@ -114,12 +117,7 @@ async function main() {
     })
     const wanted =
       permKeys === 'ALL_BUT_VENDOR'
-        ? allPerms.filter((p) => {
-            if (p.key === 'vendor.manage') return false
-            // Demo Admins must not manage real users or disable accounts.
-            if (name === 'Demo Admin' && p.key === 'users.manage') return false
-            return true
-          })
+        ? allPerms.filter((p) => p.key !== 'vendor.manage')
         : allPerms.filter((p) => permKeys.includes(p.key))
     for (const p of wanted) {
       await prisma.rolePermission.upsert({

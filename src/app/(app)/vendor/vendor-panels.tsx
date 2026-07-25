@@ -105,24 +105,34 @@ export function DemoAccessCard({ demoUsers }: { demoUsers: DemoUser[] }) {
   const [state, formAction, pending] = useActionState<DemoActionState, FormData>(createDemoUserAction, {})
   return (
     <div className="mt-3 space-y-3">
-      <form action={formAction} className="flex flex-wrap items-end gap-3">
-        <label className="text-xs font-medium text-slate-500">
-          Valid for (hours)
-          <input
-            name="hours"
-            type="number"
-            defaultValue={24}
-            min={1}
-            max={720}
-            className="mt-1 block w-28 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
-          />
+      <form action={formAction} className="space-y-3">
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="text-xs font-medium text-slate-500">
+            Valid for (hours)
+            <input
+              name="hours"
+              type="number"
+              defaultValue={24}
+              min={1}
+              max={720}
+              className="mt-1 block w-28 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
+            />
+          </label>
+          <button
+            disabled={pending}
+            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
+          >
+            {pending ? 'Preparing…' : 'Create demo login'}
+          </button>
+        </div>
+        <label className="flex items-start gap-2 text-xs text-slate-600">
+          <input type="checkbox" name="fresh" defaultChecked value="on" className="mt-0.5" />
+          <span>
+            <span className="font-medium text-slate-700">Start from a fresh install</span> — wipes the
+            workspace first so the prospect sees an empty org (no team, data or connectors) and configures
+            everything themselves. Uncheck to add a login to the current workspace as-is.
+          </span>
         </label>
-        <button
-          disabled={pending}
-          className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
-        >
-          {pending ? 'Creating…' : 'Create demo login'}
-        </button>
       </form>
       {!state.credentials && <Feedback state={state} />}
 
@@ -185,21 +195,22 @@ export function ResetDemoDataCard() {
   return (
     <div className="mt-3 space-y-3">
       <p className="text-xs text-slate-500">
-        Clears every lead, deal, client, campaign, invoice, ticket and message created during demos, returning
-        the workspace to its freshly-seeded state. The team, roles, departments, settings, license, connected
-        integrations and any demo logins are kept.
+        Wipes the workspace back to a brand-new install: no employees, no team, no leads/deals/clients/
+        campaigns/tickets/invoices, no connected integrations, no history. The base config (roles, default
+        statuses, settings, license) and the vendor console stay. Use this to blank the workspace without
+        creating a login — otherwise just tick &ldquo;Start from a fresh install&rdquo; when you create a demo.
       </p>
       {!open ? (
         <button
           onClick={() => setOpen(true)}
           className="rounded-lg border border-red-300 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50"
         >
-          Wipe demo data…
+          Reset to fresh install…
         </button>
       ) : (
         <form action={formAction} className="space-y-3 rounded-xl border border-red-200 bg-red-50/60 p-4">
           <p className="text-sm text-red-700">
-            This permanently deletes all operational data. It cannot be undone. Type <code className="font-mono font-semibold">{phrase}</code> to confirm.
+            This permanently deletes all demo data and the team. It cannot be undone. Type <code className="font-mono font-semibold">{phrase}</code> to confirm.
           </p>
           <input
             name="confirm"
@@ -215,7 +226,7 @@ export function ResetDemoDataCard() {
               disabled={pending || confirm !== phrase}
               className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500 disabled:opacity-40"
             >
-              {pending ? 'Wiping…' : 'Wipe demo data'}
+              {pending ? 'Resetting…' : 'Reset to fresh install'}
             </button>
             <button
               type="button"
