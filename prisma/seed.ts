@@ -36,6 +36,7 @@ const PERMISSIONS: Array<[key: string, module: string, description: string]> = [
   ['invoices.manage', 'invoices', 'Create invoices, record payments'],
   ['reports.view', 'reports', 'View module dashboards'],
   ['reports.exec', 'reports', 'View executive dashboard'],
+  ['monitoring.deep', 'monitoring', 'View captured window titles & screenshots (deep monitoring)'],
   ['approvals.act', 'approvals', 'Act on assigned approval requests'],
   ['automation.manage', 'automation', 'Edit automation rules'],
   ['settings.manage', 'settings', 'Tenant settings, statuses, departments, templates'],

@@ -16,7 +16,37 @@ export async function sendPing(config: AgentConfig, s: Sample): Promise<PingResu
         'content-type': 'application/json',
         authorization: `Bearer ${config.token}`,
       },
-      body: JSON.stringify({ appName: s.appName ?? undefined, idleSec: s.idleSec }),
+      body: JSON.stringify({
+        appName: s.appName ?? undefined,
+        windowTitle: s.windowTitle ?? undefined,
+        idleSec: s.idleSec,
+      }),
+      signal: controller.signal,
+    })
+    clearTimeout(timer)
+    return { ok: res.ok, status: res.status }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
+}
+
+/** Upload a periodic screen capture (deep monitoring, consented). Best-effort. */
+export async function sendScreenshot(
+  config: AgentConfig,
+  image: string,
+  appName: string | null,
+): Promise<PingResult> {
+  const url = `${config.serverUrl.replace(/\/+$/, '')}/api/agent/screenshot`
+  try {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 20_000)
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${config.token}`,
+      },
+      body: JSON.stringify({ image, appName: appName ?? undefined }),
       signal: controller.signal,
     })
     clearTimeout(timer)

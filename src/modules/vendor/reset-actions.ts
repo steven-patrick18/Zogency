@@ -69,7 +69,7 @@ const WIPE_TABLES = [
   // Payroll
   'payroll_runs', 'payslips',
   // Monitoring, integrations, notifications, attachments, audit history
-  'activity_pings', 'integration_credentials', 'notifications', 'comments',
+  'activity_pings', 'screen_captures', 'integration_credentials', 'notifications', 'comments',
   'webhook_events', 'files', 'audit_logs',
 ] as const
 

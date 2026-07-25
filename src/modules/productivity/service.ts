@@ -104,12 +104,20 @@ export type MemberActivityDetail = {
   auditTrail: Array<{ at: Date; action: string; entityType: string }>
   calls: Array<{ at: Date; direction: string; durationSec: number | null; disposition: string | null; leadName: string }>
   completedTasks: Array<{ at: Date; title: string }>
+  // Deep monitoring (monitoring.deep permission) — window titles + screenshots.
+  titles: Array<{ at: Date; app: string | null; title: string }>
+  screenshots: Array<{ id: string; at: Date; app: string | null; image: string }>
 }
 
-/** Everything we know about one member's day: agent pings + CRM signals. */
+/**
+ * Everything we know about one member's day: agent pings + CRM signals.
+ * `includeDeep` adds window titles + screenshots (caller must hold
+ * monitoring.deep — enforced at the page).
+ */
 export async function getMemberActivityDetail(
   userId: string,
   dayStart: Date,
+  includeDeep = false,
 ): Promise<MemberActivityDetail | null> {
   const dayEnd = new Date(dayStart.getTime() + 86_400_000)
   const range = { gte: dayStart, lt: dayEnd }
@@ -141,13 +149,20 @@ export async function getMemberActivityDetail(
     }),
   ])
 
-  const [department, attendance] = await Promise.all([
+  const [department, attendance, screenshots] = await Promise.all([
     employee?.departmentId
       ? prisma.department.findUnique({ where: { id: employee.departmentId }, select: { name: true } })
       : Promise.resolve(null),
     employee
       ? prisma.attendanceRecord.findFirst({ where: { employeeId: employee.id, date: range } })
       : Promise.resolve(null),
+    includeDeep
+      ? prisma.screenCapture.findMany({
+          where: { userId, at: range },
+          orderBy: { at: 'asc' },
+          select: { id: true, at: true, appName: true, image: true },
+        })
+      : Promise.resolve([]),
   ])
 
   // Hourly buckets + app minutes from ~1/min pings (active = idleSec < 60).
@@ -194,5 +209,14 @@ export async function getMemberActivityDetail(
       leadName: c.lead.name,
     })),
     completedTasks: taskHistory.map((t) => ({ at: t.at, title: t.task.title })),
+    // Deep monitoring: dedupe consecutive identical titles so the feed reads as
+    // "what they worked on", not 60 copies per hour.
+    titles: includeDeep
+      ? pings
+          .filter((p) => p.windowTitle)
+          .filter((p, i, arr) => i === 0 || p.windowTitle !== arr[i - 1].windowTitle)
+          .map((p) => ({ at: p.at, app: p.appName, title: p.windowTitle! }))
+      : [],
+    screenshots: screenshots.map((s) => ({ id: s.id, at: s.at, app: s.appName, image: s.image })),
   }
 }

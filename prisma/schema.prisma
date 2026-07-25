@@ -1699,15 +1699,30 @@ model RetainerSchedule {
 // ── Desktop activity monitoring (Electron agent ingest) ─────────────────────
 // Requires signed employee consent (doc 11 risk note) — surfaced in the UI.
 model ActivityPing {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  at          DateTime @default(now())
+  appName     String?  @map("app_name")
+  windowTitle String?  @map("window_title") // active window title (deep monitoring — DLP signal)
+  idleSec     Int      @default(0) @map("idle_sec")
+
+  @@index([tenantId, userId, at])
+  @@map("activity_pings")
+}
+
+// Periodic screen captures from the desktop agent (deep monitoring, consented).
+// Downscaled JPEG data-URIs; pruned after RETENTION days by the ingest route.
+model ScreenCapture {
   id       String   @id @default(uuid(7)) @db.Uuid
   tenantId String   @map("tenant_id") @db.Uuid
   userId   String   @map("user_id") @db.Uuid
   at       DateTime @default(now())
-  appName  String?  @map("app_name")
-  idleSec  Int      @default(0) @map("idle_sec")
+  appName  String?  @map("app_name") // foreground app at capture time
+  image    String // data:image/jpeg;base64,… (≤ ~300KB, downscaled)
 
   @@index([tenantId, userId, at])
-  @@map("activity_pings")
+  @@map("screen_captures")
 }
 
 // ── Calls & SLA (Sprint 4 — FR-2.1–2.5) ────────────────────────────────────

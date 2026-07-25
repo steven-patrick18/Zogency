@@ -87,6 +87,7 @@ export const TENANT_SCOPED_MODELS = new Set([
   'VendorClient',
   'VendorRelease',
   'ActivityPing',
+  'ScreenCapture',
   'SupportTicket',
   'TicketMessage',
   'ChatMessage',

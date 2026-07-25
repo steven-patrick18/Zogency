@@ -5,10 +5,14 @@
 import { app, BrowserWindow, ipcMain, Menu, nativeImage, Tray } from 'electron'
 import { join } from 'node:path'
 import { isConfigured, loadConfig, saveConfig, type AgentConfig } from './config'
-import { sample } from './tracker'
-import { sendPing, type PingResult } from './api'
+import { captureScreen, sample } from './tracker'
+import { sendPing, sendScreenshot, type PingResult } from './api'
 
 const PING_INTERVAL_MS = 60_000
+// Deep monitoring: one screenshot every N pings (5 min at 1-min pings) while
+// active. Disclosed on the consent screen; pausing the agent pauses this too.
+const SCREENSHOT_EVERY_N_PINGS = 5
+let pingCount = 0
 // Auto-pause after prolonged inactivity (with a warning first), so idle time
 // off-shift isn't tracked. Resumes automatically on activity.
 const IDLE_WARN_SEC = 5 * 60
@@ -55,6 +59,15 @@ async function tick() {
   }
 
   const result: PingResult = await sendPing(config, s)
+
+  // Deep monitoring: periodic screenshot while active (skipped when paused —
+  // this code path is unreachable then — or idle-paused above).
+  pingCount++
+  if (result.ok && pingCount % SCREENSHOT_EVERY_N_PINGS === 0) {
+    const image = await captureScreen()
+    if (image) await sendScreenshot(config, image, s.appName)
+  }
+
   const now = new Date().toLocaleTimeString()
   if (result.ok) {
     lastStatus = `Connected · last sync ${now}`
