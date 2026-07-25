@@ -73,6 +73,9 @@ model TenantSettings {
   featureFlags         Json    @default("{}") @map("feature_flags")
   licenseKey           String? @map("license_key")
   maxDiscountPercent   Int     @default(10) @map("max_discount_percent") // doc 11 Q10 — BRB's matrix values pending
+  // Leave policy caps (strict-management policy 2026) — admin-configurable.
+  maxContinuousAbsenceDays Int @default(4) @map("max_continuous_absence_days") // CL+EL+RH+PH+WOFF block cap
+  plannedLeaveNoticeDays   Int @default(2) @map("planned_leave_notice_days") // working days' advance notice
   updatedAt            DateTime @updatedAt @map("updated_at")
 
   tenant Tenant @relation(fields: [tenantId], references: [id])
@@ -1138,6 +1141,8 @@ model Employee {
   probationEndsOn DateTime? @map("probation_ends_on") @db.Date
   status          String    @default("active") // active|notice|exited
   exitedOn        DateTime? @map("exited_on") @db.Date
+  confirmedOn     DateTime? @map("confirmed_on") @db.Date // probation cleared → EL accrual starts
+  weeklyOffDays   Int[]     @default([0, 6]) @map("weekly_off_days") // 0=Sun..6=Sat; 2 rotational offs
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
 
@@ -1224,8 +1229,19 @@ model LeaveType {
   id           String  @id @default(uuid(7)) @db.Uuid
   tenantId     String  @map("tenant_id") @db.Uuid
   name         String
+  code         String? // short code: CL|EL|RH|SL… — rule identity, editable
   annualQuota  Int     @map("annual_quota")
-  carryForward Boolean @default(false) @map("carry_forward")
+  carryForward Boolean @default(false) @map("carry_forward") // any carry-forward at all
+  // ── Strict-policy rules (all admin-configurable, doc HR leave policy 2026) ──
+  accrualPerMonth      Int     @default(0) @map("accrual_per_month") // monthly accrual (CL/EL = 1)
+  carryForwardMax      Int     @default(0) @map("carry_forward_max") // cap carried to next year (EL = 18)
+  maxConsecutive       Int     @default(0) @map("max_consecutive") // per request; 0 = unlimited
+  woffAdjacency        String  @default("allowed") @map("woff_adjacency") // allowed|limited1|forbidden
+  standaloneOnly       Boolean @default(false) @map("standalone_only") // RH: single, no clubbing
+  clubbableWithLeave   Boolean @default(true) @map("clubbable_with_leave") // may share a block with another leave type
+  encashable           Boolean @default(false) // may be encashed (EL only, with approval)
+  requiresConfirmation Boolean @default(false) @map("requires_confirmation") // accrues only after confirmation (EL)
+  lapses               Boolean @default(true) // unused balance lapses at year end
 
   balances LeaveBalance[]
   requests LeaveRequest[]

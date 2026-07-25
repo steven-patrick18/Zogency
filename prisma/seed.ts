@@ -290,16 +290,49 @@ async function main() {
   }
 
   // Leave types (FR-4.9/4.10) — Admin-editable in a later settings pass.
-  const LEAVE_TYPES: Array<[name: string, quota: number, carry: boolean]> = [
-    ['Casual Leave', 12, false],
-    ['Sick Leave', 8, false],
-    ['Earned Leave', 15, true],
+  // Leave types encode the strict-management policy (BRB leave policy 2026).
+  // All fields stay admin-editable on /hr/policy.
+  type LeaveSeed = {
+    name: string
+    code: string
+    annualQuota: number
+    accrualPerMonth: number
+    carryForwardMax: number
+    maxConsecutive: number
+    woffAdjacency: 'allowed' | 'limited1' | 'forbidden'
+    standaloneOnly: boolean
+    clubbableWithLeave: boolean
+    encashable: boolean
+    requiresConfirmation: boolean
+  }
+  const LEAVE_TYPES: LeaveSeed[] = [
+    // CL: 1/mo, 12/yr, no carry, ≤2 consecutive but only 1 if adjacent to a WOFF,
+    // never clubbed with EL/RH.
+    { name: 'Casual Leave', code: 'CL', annualQuota: 12, accrualPerMonth: 1, carryForwardMax: 0, maxConsecutive: 2, woffAdjacency: 'limited1', standaloneOnly: false, clubbableWithLeave: false, encashable: false, requiresConfirmation: false },
+    // EL: 1/mo after confirmation, 12/yr, carry ≤18, ≤4 consecutive, never adjacent
+    // to a WOFF, never clubbed with CL/RH, encashable only with approval.
+    { name: 'Earned Leave', code: 'EL', annualQuota: 12, accrualPerMonth: 1, carryForwardMax: 18, maxConsecutive: 4, woffAdjacency: 'forbidden', standaloneOnly: false, clubbableWithLeave: false, encashable: true, requiresConfirmation: true },
+    // RH: 4/yr, standalone single days only, never clubbed, lapses.
+    { name: 'Restricted Holiday', code: 'RH', annualQuota: 4, accrualPerMonth: 0, carryForwardMax: 0, maxConsecutive: 1, woffAdjacency: 'allowed', standaloneOnly: true, clubbableWithLeave: false, encashable: false, requiresConfirmation: false },
   ]
-  for (const [name, annualQuota, carryForward] of LEAVE_TYPES) {
+  for (const t of LEAVE_TYPES) {
+    const data = {
+      code: t.code,
+      annualQuota: t.annualQuota,
+      carryForward: t.carryForwardMax > 0,
+      accrualPerMonth: t.accrualPerMonth,
+      carryForwardMax: t.carryForwardMax,
+      maxConsecutive: t.maxConsecutive,
+      woffAdjacency: t.woffAdjacency,
+      standaloneOnly: t.standaloneOnly,
+      clubbableWithLeave: t.clubbableWithLeave,
+      encashable: t.encashable,
+      requiresConfirmation: t.requiresConfirmation,
+    }
     await prisma.leaveType.upsert({
-      where: { tenantId_name: { tenantId: tenant.id, name } },
-      update: { annualQuota, carryForward },
-      create: { tenantId: tenant.id, name, annualQuota, carryForward },
+      where: { tenantId_name: { tenantId: tenant.id, name: t.name } },
+      update: data,
+      create: { tenantId: tenant.id, name: t.name, ...data },
     })
   }
 

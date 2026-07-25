@@ -169,6 +169,7 @@ const leaveSchema = z.object({
   fromOn: z.string().min(1),
   toOn: z.string().min(1),
   reason: z.string().min(1, 'Reason required'),
+  emergency: z.string().optional(),
 })
 
 export async function requestLeaveAction(_p: S, formData: FormData): Promise<S> {
@@ -183,6 +184,7 @@ export async function requestLeaveAction(_p: S, formData: FormData): Promise<S> 
       fromOn: new Date(parsed.data.fromOn),
       toOn: new Date(parsed.data.toOn),
       reason: parsed.data.reason,
+      isEmergency: parsed.data.emergency === 'on',
     })
   })
   revalidatePath('/hr')
@@ -365,14 +367,32 @@ export async function saveLeaveTypeAction(_p: S, formData: FormData): Promise<S>
   const session = await requirePermission('hr.manage')
   const name = String(formData.get('name') ?? '').trim()
   const annualQuota = Number(formData.get('annualQuota'))
-  const carryForward = formData.get('carryForward') === 'on'
   if (!name || !annualQuota || annualQuota < 0) return { error: 'Name and a positive annual quota are required' }
+
+  const num = (k: string, d = 0) => {
+    const v = Number(formData.get(k))
+    return Number.isFinite(v) && v >= 0 ? v : d
+  }
+  const woffAdjacency = String(formData.get('woffAdjacency') ?? 'allowed')
+  const carryForwardMax = num('carryForwardMax')
+  const rules = {
+    code: String(formData.get('code') ?? '').trim() || null,
+    carryForward: carryForwardMax > 0,
+    carryForwardMax,
+    accrualPerMonth: num('accrualPerMonth'),
+    maxConsecutive: num('maxConsecutive'),
+    woffAdjacency: ['allowed', 'limited1', 'forbidden'].includes(woffAdjacency) ? woffAdjacency : 'allowed',
+    standaloneOnly: formData.get('standaloneOnly') === 'on',
+    clubbableWithLeave: formData.get('clubbableWithLeave') === 'on',
+    encashable: formData.get('encashable') === 'on',
+    requiresConfirmation: formData.get('requiresConfirmation') === 'on',
+  }
 
   await withTenant(async () => {
     const type = await prisma.leaveType.upsert({
       where: { tenantId_name: { tenantId: session.user.tenantId, name } },
-      update: { annualQuota, carryForward },
-      create: scoped({ name, annualQuota, carryForward }),
+      update: { annualQuota, ...rules },
+      create: scoped({ name, annualQuota, ...rules }),
     })
     // Provision current-year balances for every active employee that lacks one
     // (existing balances keep their remaining days — quota changes apply to
@@ -390,10 +410,28 @@ export async function saveLeaveTypeAction(_p: S, formData: FormData): Promise<S>
         create: scoped({ employeeId: employee.id, typeId: type.id, year, available: annualQuota }),
       })
     }
-    await audit('leave_type.saved', 'leave_type', type.id, null, { name, annualQuota, carryForward })
+    await audit('leave_type.saved', 'leave_type', type.id, null, { name, annualQuota, ...rules })
   })
   revalidatePath('/hr/policy')
   return { success: `Leave policy "${name}" saved — balances provisioned for all active employees` }
+}
+
+/** Tenant-level leave caps: continuous-absence cap + planned-leave notice. */
+export async function saveLeavePolicyAction(_p: S, formData: FormData): Promise<S> {
+  const session = await requirePermission('hr.manage')
+  const maxContinuousAbsenceDays = Math.max(1, Number(formData.get('maxContinuousAbsenceDays')) || 4)
+  const plannedLeaveNoticeDays = Math.max(0, Number(formData.get('plannedLeaveNoticeDays')) || 0)
+  await withTenant(async () => {
+    await prisma.tenantSettings.update({
+      where: { tenantId: session.user.tenantId },
+      data: { maxContinuousAbsenceDays, plannedLeaveNoticeDays },
+    })
+    await audit('leave_policy.saved', 'tenant_settings', session.user.tenantId, null, {
+      maxContinuousAbsenceDays, plannedLeaveNoticeDays,
+    })
+  })
+  revalidatePath('/hr/policy')
+  return { success: 'Leave caps updated.' }
 }
 
 export async function deleteLeaveTypeAction(formData: FormData) {

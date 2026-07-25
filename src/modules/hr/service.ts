@@ -4,6 +4,7 @@ import { audit } from '@/lib/audit'
 import { requireTenantContext } from '@/lib/db/context'
 import { prisma, scoped } from '@/lib/db/prisma'
 import { notify } from '@/lib/notify'
+import { assessLeave, type LeaveContext, type WoffAdjacency } from './leave-rules'
 
 type Result = { ok: true } | { ok: false; error: string }
 
@@ -129,13 +130,56 @@ export async function punchAttendance(
   return { ok: true, action: 'out' }
 }
 
-/** Leave request (FR-4.9) with balance check; routed to the reporting manager. */
+/**
+ * Leave request (FR-4.9) with strict-policy enforcement + balance check; routed
+ * to the reporting manager. All rules (consecutive caps, WOFF adjacency,
+ * clubbing, continuous-absence cap, advance notice) come from the configured
+ * leave type + tenant policy, so they stay admin-editable.
+ */
 export async function requestLeave(
   employeeId: string,
-  input: { typeId: string; fromOn: Date; toOn: Date; reason: string },
+  input: { typeId: string; fromOn: Date; toOn: Date; reason: string; isEmergency?: boolean },
 ): Promise<Result> {
-  const days = Math.round((input.toOn.getTime() - input.fromOn.getTime()) / 86_400_000) + 1
-  if (days <= 0) return { ok: false, error: 'End date must be on/after start date' }
+  const [type, employee, settings] = await Promise.all([
+    prisma.leaveType.findUnique({ where: { id: input.typeId } }),
+    prisma.employee.findUniqueOrThrow({ where: { id: employeeId } }),
+    prisma.tenantSettings.findFirst(),
+  ])
+  if (!type) return { ok: false, error: 'Unknown leave type' }
+
+  // Context for the rule engine: employee weekly-offs, company holidays, and the
+  // employee's other approved/pending leaves (to detect clubbing / overlaps).
+  const [holidays, existing] = await Promise.all([
+    prisma.holiday.findMany({ select: { date: true } }),
+    prisma.leaveRequest.findMany({
+      where: { employeeId, state: { in: ['pending', 'approved'] } },
+      include: { type: { select: { name: true } } },
+    }),
+  ])
+  const ctx: LeaveContext = {
+    weeklyOffDays: employee.weeklyOffDays,
+    holidays: new Set(holidays.map((h) => h.date.toISOString().slice(0, 10))),
+    existingLeaves: existing.map((l) => ({ fromOn: l.fromOn, toOn: l.toOn, typeId: l.typeId, typeName: l.type.name })),
+    maxContinuousAbsenceDays: settings?.maxContinuousAbsenceDays ?? 4,
+    plannedNoticeDays: settings?.plannedLeaveNoticeDays ?? 2,
+    today: new Date(new Date().toISOString().slice(0, 10)), // UTC midnight today
+  }
+
+  const assessment = assessLeave(
+    { fromOn: input.fromOn, toOn: input.toOn, isEmergency: input.isEmergency },
+    {
+      id: type.id,
+      name: type.name,
+      maxConsecutive: type.maxConsecutive,
+      woffAdjacency: type.woffAdjacency as WoffAdjacency,
+      standaloneOnly: type.standaloneOnly,
+      clubbableWithLeave: type.clubbableWithLeave,
+    },
+    ctx,
+  )
+  if (!assessment.ok) return { ok: false, error: assessment.error }
+  const days = assessment.leaveDays
+
   const year = input.fromOn.getFullYear()
   const balance = await prisma.leaveBalance.findFirst({
     where: { employeeId, typeId: input.typeId, year },
@@ -146,7 +190,6 @@ export async function requestLeave(
   await prisma.leaveRequest.create({
     data: scoped({ employeeId, typeId: input.typeId, fromOn: input.fromOn, toOn: input.toOn, days, reason: input.reason }),
   })
-  const employee = await prisma.employee.findUniqueOrThrow({ where: { id: employeeId } })
   if (employee.managerId) {
     const user = await prisma.user.findUniqueOrThrow({ where: { id: employee.userId } })
     await notify(employee.managerId, 'hr.leave_requested', { name: user.name, days })

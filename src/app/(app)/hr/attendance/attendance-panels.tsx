@@ -52,6 +52,10 @@ export function LeaveRequestForm({ types }: { types: Array<{ id: string; name: s
         <input name="toOn" type="date" required className={field} title="To" />
       </div>
       <input name="reason" required placeholder="Reason *" className={field} />
+      <label className="flex items-center gap-1.5 text-xs text-slate-600">
+        <input type="checkbox" name="emergency" />
+        Emergency (bypasses the advance-notice rule — for genuine emergencies only)
+      </label>
       <Feedback state={state} />
       <button disabled={pending} className={primaryBtn}>{pending ? 'Requesting…' : 'Request leave'}</button>
     </form>
