@@ -1,5 +1,6 @@
 import { requirePermission, withTenant } from '@/lib/authz'
 import { getProductivity } from '@/modules/productivity/service'
+import { RowLink } from './row-link'
 
 export default async function ProductivityPage() {
   await requirePermission('reports.view')
@@ -38,8 +39,8 @@ export default async function ProductivityPage() {
           </thead>
           <tbody className="divide-y divide-slate-100">
             {rows.map((r) => (
-              <tr key={r.userId} className="hover:bg-slate-50">
-                <td className="px-4 py-3 font-medium text-slate-900">
+              <RowLink key={r.userId} href={`/productivity/${r.userId}`}>
+                <td className="px-4 py-3 font-medium text-indigo-700">
                   {r.name}
                   {r.agentConnected && (
                     <span className="ml-1.5 rounded-full bg-green-100 px-1.5 py-0.5 text-[10px] font-medium text-green-700">
@@ -54,7 +55,7 @@ export default async function ProductivityPage() {
                 <td className="px-4 py-3 text-slate-600">{r.agentConnected ? `${r.activeMin} min` : '—'}</td>
                 <td className="px-4 py-3 text-slate-600">{r.agentConnected ? `${r.idleMin} min` : '—'}</td>
                 <td className="px-4 py-3 text-xs text-slate-500">{r.topApps.join(', ') || '—'}</td>
-              </tr>
+              </RowLink>
             ))}
           </tbody>
         </table>

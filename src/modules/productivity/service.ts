@@ -77,3 +77,122 @@ export async function getProductivity(dateStart: Date): Promise<MemberProductivi
     })
     .sort((a, b) => b.actions + b.calls + b.tasksDone - (a.actions + a.calls + a.tasksDone))
 }
+
+// ── Per-member drill-down (clickable rows on /productivity) ─────────────────
+
+export type HourBucket = { hour: number; activeMin: number; idleMin: number }
+export type AppUsage = { app: string; minutes: number }
+
+export type MemberActivityDetail = {
+  name: string
+  department: string | null
+  designation: string | null
+  agentIssued: boolean
+  hasPings: boolean
+  // Summary
+  activeMin: number
+  idleMin: number
+  firstPingAt: Date | null
+  lastPingAt: Date | null
+  actions: number
+  callCount: number
+  tasksDone: number
+  punch: { inAt: Date | null; outAt: Date | null; mode: string } | null
+  // Detail
+  hours: HourBucket[] // only hours with data
+  apps: AppUsage[]
+  auditTrail: Array<{ at: Date; action: string; entityType: string }>
+  calls: Array<{ at: Date; direction: string; durationSec: number | null; disposition: string | null; leadName: string }>
+  completedTasks: Array<{ at: Date; title: string }>
+}
+
+/** Everything we know about one member's day: agent pings + CRM signals. */
+export async function getMemberActivityDetail(
+  userId: string,
+  dayStart: Date,
+): Promise<MemberActivityDetail | null> {
+  const dayEnd = new Date(dayStart.getTime() + 86_400_000)
+  const range = { gte: dayStart, lt: dayEnd }
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, name: true, agentToken: true },
+  })
+  if (!user) return null
+
+  const [employee, pings, audits, calls, taskHistory] = await Promise.all([
+    prisma.employee.findUnique({ where: { userId } }),
+    prisma.activityPing.findMany({ where: { userId, at: range }, orderBy: { at: 'asc' } }),
+    prisma.auditLog.findMany({
+      where: { actorId: userId, at: range },
+      orderBy: { at: 'desc' },
+      select: { at: true, action: true, entityType: true },
+      take: 100,
+    }),
+    prisma.call.findMany({
+      where: { userId, startedAt: range },
+      orderBy: { startedAt: 'desc' },
+      include: { lead: { select: { name: true } } },
+    }),
+    prisma.taskStatusHistory.findMany({
+      where: { actorId: userId, at: range, to: 'done' },
+      orderBy: { at: 'desc' },
+      include: { task: { select: { title: true } } },
+    }),
+  ])
+
+  const [department, attendance] = await Promise.all([
+    employee?.departmentId
+      ? prisma.department.findUnique({ where: { id: employee.departmentId }, select: { name: true } })
+      : Promise.resolve(null),
+    employee
+      ? prisma.attendanceRecord.findFirst({ where: { employeeId: employee.id, date: range } })
+      : Promise.resolve(null),
+  ])
+
+  // Hourly buckets + app minutes from ~1/min pings (active = idleSec < 60).
+  const hourMap = new Map<number, { activeMin: number; idleMin: number }>()
+  const appMap = new Map<string, number>()
+  let active = 0
+  let idle = 0
+  for (const p of pings) {
+    const hour = p.at.getHours()
+    const bucket = hourMap.get(hour) ?? { activeMin: 0, idleMin: 0 }
+    if (p.idleSec < 60) {
+      bucket.activeMin++
+      active++
+    } else {
+      bucket.idleMin++
+      idle++
+    }
+    hourMap.set(hour, bucket)
+    if (p.appName) appMap.set(p.appName, (appMap.get(p.appName) ?? 0) + 1)
+  }
+
+  return {
+    name: user.name,
+    department: department?.name ?? null,
+    designation: employee?.designation ?? null,
+    agentIssued: !!user.agentToken,
+    hasPings: pings.length > 0,
+    activeMin: active,
+    idleMin: idle,
+    firstPingAt: pings[0]?.at ?? null,
+    lastPingAt: pings[pings.length - 1]?.at ?? null,
+    actions: audits.length,
+    callCount: calls.length,
+    tasksDone: taskHistory.length,
+    punch: attendance ? { inAt: attendance.inAt, outAt: attendance.outAt, mode: attendance.mode } : null,
+    hours: [...hourMap.entries()].map(([hour, b]) => ({ hour, ...b })).sort((a, b) => a.hour - b.hour),
+    apps: [...appMap.entries()].map(([app, minutes]) => ({ app, minutes })).sort((a, b) => b.minutes - a.minutes),
+    auditTrail: audits,
+    calls: calls.map((c) => ({
+      at: c.startedAt,
+      direction: c.direction,
+      durationSec: c.durationSec,
+      disposition: c.disposition,
+      leadName: c.lead.name,
+    })),
+    completedTasks: taskHistory.map((t) => ({ at: t.at, title: t.task.title })),
+  }
+}
