@@ -5,24 +5,26 @@ import { logoutAction } from '@/modules/auth/actions'
 import { getWorkspaceLicense } from '@/modules/settings/service'
 import { vendorModeEnabled } from '@/modules/vendor/config'
 
-// Module nav — items without an href ship in later sprints (doc 10).
-const NAV: Array<{ label: string; href?: string; sprint?: string }> = [
-  { label: 'Dashboard', href: '/dashboard' },
-  { label: 'Leads', href: '/leads' },
-  { label: 'Pipeline', href: '/pipeline' },
-  { label: 'Clients', href: '/clients' },
-  { label: 'Retention', href: '/retention' },
-  { label: 'Campaigns', href: '/campaigns' },
-  { label: 'Support', href: '/support' },
-  { label: 'Content', href: '/content' },
-  { label: 'Meetings', href: '/meetings' },
-  { label: 'Tasks', href: '/tasks' },
-  { label: 'HR', href: '/hr' },
-  { label: 'Invoices', href: '/invoices' },
-  { label: 'Reports', href: '/reports' },
-  { label: 'Productivity', href: '/productivity' },
-  { label: 'Chat', href: '/chat' },
-  { label: 'Settings', href: '/settings' },
+// Module nav. `perm` mirrors each page's own requirePermission gate, so a user
+// only sees links they can actually open (no perm = everyone). Keep these in
+// sync with the page guards.
+const NAV: Array<{ label: string; href: string; perm?: string }> = [
+  { label: 'Dashboard', href: '/dashboard' }, // requireSession only
+  { label: 'Leads', href: '/leads', perm: 'leads.view' },
+  { label: 'Pipeline', href: '/pipeline', perm: 'leads.view' },
+  { label: 'Clients', href: '/clients', perm: 'clients.view' },
+  { label: 'Retention', href: '/retention', perm: 'clients.view' },
+  { label: 'Campaigns', href: '/campaigns', perm: 'campaigns.view' },
+  { label: 'Support', href: '/support', perm: 'clients.view' },
+  { label: 'Content', href: '/content', perm: 'campaigns.view' },
+  { label: 'Meetings', href: '/meetings', perm: 'clients.view' },
+  { label: 'Tasks', href: '/tasks', perm: 'tasks.view' },
+  { label: 'HR', href: '/hr', perm: 'hr.view' },
+  { label: 'Invoices', href: '/invoices', perm: 'invoices.view' },
+  { label: 'Reports', href: '/reports', perm: 'reports.view' },
+  { label: 'Productivity', href: '/productivity', perm: 'reports.view' },
+  { label: 'Chat', href: '/chat' }, // requireSession only
+  { label: 'Settings', href: '/settings', perm: 'settings.manage' },
 ]
 
 const LICENSE_BANNERS: Record<string, { text: string; cls: string }> = {
@@ -51,10 +53,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   )
   const banner = LICENSE_BANNERS[license.state]
   const sidebarAvatar = me?.avatar ?? null
-  const nav =
-    vendorModeEnabled() && session.user.permissions.includes('vendor.manage')
-      ? [...NAV, { label: 'Vendor', href: '/vendor' }]
-      : NAV
+  const perms = session.user.permissions
+  // Show only the modules this user can open (menu mirrors the page guards).
+  const nav = NAV.filter((item) => !item.perm || perms.includes(item.perm))
+  if (vendorModeEnabled() && perms.includes('vendor.manage')) {
+    nav.push({ label: 'Vendor', href: '/vendor' })
+  }
 
   return (
     // Full-viewport shell: sidebar + topbar stay fixed, only <main> scrolls.
@@ -63,27 +67,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <div className="border-b border-slate-800 px-5 py-4">
           <span className="text-lg font-bold text-white">Zogency</span>
         </div>
-        <nav className="flex-1 space-y-0.5 px-3 py-4">
-          {nav.map((item) =>
-            item.href ? (
-              <Link
-                key={item.label}
-                href={item.href}
-                className="block rounded-lg px-3 py-2 text-sm font-medium text-slate-200 hover:bg-slate-800"
-              >
-                {item.label}
-              </Link>
-            ) : (
-              <span
-                key={item.label}
-                className="flex items-center justify-between rounded-lg px-3 py-2 text-sm text-slate-600"
-                title={`Ships in ${item.sprint}`}
-              >
-                {item.label}
-                <span className="text-[10px] uppercase tracking-wide">{item.sprint}</span>
-              </span>
-            ),
-          )}
+        <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-4">
+          {nav.map((item) => (
+            <Link
+              key={item.label}
+              href={item.href}
+              className="block rounded-lg px-3 py-2 text-sm font-medium text-slate-200 hover:bg-slate-800"
+            >
+              {item.label}
+            </Link>
+          ))}
         </nav>
         <div className="flex items-start gap-3 border-t border-slate-800 px-5 py-4">
           {sidebarAvatar ? (

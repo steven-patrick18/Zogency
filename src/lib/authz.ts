@@ -13,7 +13,9 @@ export async function requireSession() {
 export async function requirePermission(key: string) {
   const session = await requireSession()
   if (!session.user.permissions.includes(key)) {
-    throw new Error(`Forbidden: missing permission ${key}`)
+    // Clean bounce to a friendly page rather than an unhandled 500. The menu
+    // already hides links the user lacks — this covers direct-URL access.
+    redirect(`/forbidden?need=${encodeURIComponent(key)}`)
   }
   return session
 }
