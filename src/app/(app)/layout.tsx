@@ -107,11 +107,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <header className="flex shrink-0 items-center justify-end gap-2 border-b border-slate-200 bg-white px-6 py-2">
           {/* Punch in/out + today's active hours — only for linked employees. */}
           {self && (
-            <PunchWidget
-              punchedIn={self.punchedIn}
-              outAt={!!self.outAt}
-              activeMinutes={self.activeMinutes}
-            />
+            <PunchWidget punchedIn={self.punchedIn} activeMinutes={self.activeMinutes} />
           )}
           {/* Desktop-agent status — only for users with monitoring enabled. */}
           {agent.hasToken && (

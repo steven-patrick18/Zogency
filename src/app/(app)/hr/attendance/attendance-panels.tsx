@@ -31,7 +31,7 @@ export function PunchPanel() {
           Punch (WFH)
         </button>
       </div>
-      <p className="text-xs text-slate-400">First punch of the day is in, the second is out (FR-4.8).</p>
+      <p className="text-xs text-slate-400">Each punch toggles in/out — punch back in after a break (FR-4.8).</p>
       <Feedback state={state} />
     </form>
   )

@@ -114,25 +114,41 @@ export async function hireCandidate(
   return { ok: true, employeeId: employee.id }
 }
 
-/** Attendance punch (FR-4.8): one row per employee per day, in/out updates. */
+/**
+ * Attendance punch (FR-4.8): one row per employee per day, toggled in/out.
+ * Punched-in = inAt set & outAt null. Toggling lets an employee punch back in
+ * after a break — inAt keeps the day's FIRST punch-in, outAt tracks the LATEST
+ * punch-out, so the row always spans the day's presence.
+ */
 export async function punchAttendance(
   employeeId: string,
   mode: 'office' | 'wfh',
 ): Promise<Result & { action?: 'in' | 'out' }> {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
+  const now = new Date()
   const existing = await prisma.attendanceRecord.findFirst({
     where: { employeeId, date: today },
   })
   if (!existing) {
     await prisma.attendanceRecord.create({
-      data: scoped({ employeeId, date: today, inAt: new Date(), mode }),
+      data: scoped({ employeeId, date: today, inAt: now, mode }),
     })
     return { ok: true, action: 'in' }
   }
-  if (existing.outAt) return { ok: false, error: 'Already punched out for today' }
-  await prisma.attendanceRecord.update({ where: { id: existing.id }, data: { outAt: new Date() } })
-  return { ok: true, action: 'out' }
+  const punchedIn = !!existing.inAt && !existing.outAt
+  if (punchedIn) {
+    // Currently in → punch out.
+    await prisma.attendanceRecord.update({ where: { id: existing.id }, data: { outAt: now } })
+    return { ok: true, action: 'out' }
+  }
+  // Currently out (or an activity-only row) → punch back in: reopen the day,
+  // keeping the original first punch-in time.
+  await prisma.attendanceRecord.update({
+    where: { id: existing.id },
+    data: { inAt: existing.inAt ?? now, outAt: null, mode },
+  })
+  return { ok: true, action: 'in' }
 }
 
 /**
