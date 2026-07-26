@@ -3,12 +3,17 @@
 // takes over in a later sprint (doc 08 §6).
 import { requirePermission, withTenant } from '@/lib/authz'
 import { prisma } from '@/lib/db/prisma'
+import { getExecutiveReport, parsePeriod } from '@/modules/reports/executive'
+import { ExecutiveBriefing } from './executive-briefing'
 
 const CARD = 'rounded-xl border border-slate-200 bg-white p-5'
 const THEAD = 'text-left text-xs uppercase tracking-wide text-slate-400'
 
-export default async function ReportsPage() {
+export default async function ReportsPage({ searchParams }: { searchParams: Promise<{ period?: string }> }) {
   await requirePermission('reports.view')
+  const period = parsePeriod((await searchParams).period)
+
+  const exec = await withTenant(() => getExecutiveReport(period))
 
   const data = await withTenant(async () => {
     const [
@@ -153,14 +158,24 @@ export default async function ReportsPage() {
   ]
 
   return (
-    <div className="max-w-5xl">
+    <div className="max-w-6xl">
       <h1 className="text-2xl font-bold text-slate-900">Reports</h1>
       <p className="mt-1 text-sm text-slate-500">
-        FR-9.2–9.6 · computed live — snapshot precompute pending
+        FR-9.1–9.6 · computed live — snapshot precompute pending
       </p>
 
-      {/* Executive summary (FR-9.6) */}
-      <div className="mt-6 grid grid-cols-3 gap-4">
+      {/* CEO briefing — deep, period-filtered cross-functional analytics */}
+      <div className="mt-6">
+        <ExecutiveBriefing report={exec} />
+      </div>
+
+      <div className="mt-10 mb-2 flex items-center gap-3">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400">Operational detail</h2>
+        <div className="h-px flex-1 bg-slate-200" />
+      </div>
+
+      {/* At-a-glance snapshot (FR-9.6) */}
+      <div className="grid grid-cols-3 gap-4">
         {stats.map((s) => (
           <div key={s.label} className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
             <p className="text-2xl font-bold text-slate-900">{s.value}</p>
