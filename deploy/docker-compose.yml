@@ -18,6 +18,11 @@ services:
         condition: service_healthy
     expose:
       - "3000"
+    volumes:
+      # Read-only: host cleanup cron writes last-cleanup.json here; the Server
+      # page reads it. The app has NO Docker access — host maintenance is the
+      # cron's job, never the web container's.
+      - ./maintenance:/maintenance:ro
 
   postgres:
     image: postgres:16-alpine

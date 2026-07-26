@@ -2,7 +2,7 @@
 // monitoring screen-capture footprint, with admin controls to set the capture
 // retention window and free storage by deleting images.
 import { requirePermission, withTenant } from '@/lib/authz'
-import { getCaptureStorage, getServerStatus } from '@/modules/system/service'
+import { getCaptureStorage, getMaintenanceStatus, getServerStatus } from '@/modules/system/service'
 import { PurgeButtons, RetentionForm } from './server-panels'
 
 const fmtBytes = (n: number) => {
@@ -41,6 +41,7 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
 export default async function ServerStatusPage() {
   await requirePermission('system.manage')
   const status = await getServerStatus()
+  const maint = await getMaintenanceStatus()
   const storage = await withTenant(() => getCaptureStorage())
   const memPct = Math.round((status.memUsed / status.memTotal) * 100)
 
@@ -81,6 +82,36 @@ export default async function ServerStatusPage() {
               <p className="mt-1 text-sm text-slate-400">unavailable</p>
             )}
           </div>
+        </div>
+      </div>
+
+      {/* Host maintenance — automated Docker cleanup (read-only status). */}
+      <div className="rounded-xl border border-slate-200 bg-white p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="font-semibold text-slate-900">Host maintenance</h3>
+            <p className="mt-1 max-w-2xl text-xs text-slate-400">
+              Docker build cache from repeated updates is the biggest disk consumer over time. A
+              weekly job reclaims it automatically (cache &amp; unused layers only — never your data).
+              It runs on the host; the app has no server access by design.
+            </p>
+          </div>
+          <span
+            className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${
+              maint.scheduled ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'
+            }`}
+          >
+            {maint.scheduled ? 'Weekly cleanup active' : 'Scheduled — first run pending'}
+          </span>
+        </div>
+        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <Stat label="Schedule" value="Weekly" sub="Sundays 04:00 UTC" />
+          <Stat
+            label="Last run"
+            value={maint.ranAt ? new Date(maint.ranAt).toLocaleDateString('en-IN') : '—'}
+            sub={maint.ranAt ? new Date(maint.ranAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : 'not yet run'}
+          />
+          <Stat label="Reclaimed last run" value={maint.ranAt ? fmtBytes(maint.freedBytes) : '—'} />
         </div>
       </div>
 

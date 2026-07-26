@@ -2,7 +2,7 @@
 // Host metrics come from Node's os/fs; capture storage is per-tenant (each
 // agency sees only its own screenshots).
 import os from 'node:os'
-import { statfs } from 'node:fs/promises'
+import { readFile, statfs } from 'node:fs/promises'
 import { requireTenantContext } from '@/lib/db/context'
 import { prisma, prismaUnscoped } from '@/lib/db/prisma'
 
@@ -43,6 +43,33 @@ export async function getServerStatus(): Promise<ServerStatus> {
     memFree,
     memUsed: memTotal - memFree,
     disk,
+  }
+}
+
+export type MaintenanceStatus = {
+  scheduled: boolean // the weekly cleanup is wired (status file dir is mounted)
+  ranAt: string | null
+  freedBytes: number
+  usedBytesAfter: number
+}
+
+/**
+ * Host cleanup status, written weekly by deploy/cleanup.sh into a read-only
+ * mount. The app itself has NO Docker access — it only reads this status file.
+ */
+export async function getMaintenanceStatus(): Promise<MaintenanceStatus> {
+  try {
+    const raw = await readFile('/maintenance/last-cleanup.json', 'utf-8')
+    const j = JSON.parse(raw) as { ranAt?: string; freedBytes?: number; usedBytesAfter?: number }
+    return {
+      scheduled: true,
+      ranAt: j.ranAt ?? null,
+      freedBytes: Number(j.freedBytes) || 0,
+      usedBytesAfter: Number(j.usedBytesAfter) || 0,
+    }
+  } catch {
+    // No status file yet (never run) or the mount isn't present (e.g. dev).
+    return { scheduled: false, ranAt: null, freedBytes: 0, usedBytesAfter: 0 }
   }
 }
 

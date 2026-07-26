@@ -103,6 +103,18 @@ CRON
   chmod 644 /etc/cron.d/zogency-update
 fi
 
+# ── Weekly Docker cleanup ───────────────────────────────────────────────────
+# Docker build cache piles up from repeated image rebuilds (deploys / auto-
+# updates) and is the biggest disk consumer over time. A weekly cron reclaims it
+# safely (cache + dangling images only — never data or running containers).
+say "Scheduling weekly Docker cleanup…"
+chmod +x "$DIR/deploy/cleanup.sh"
+mkdir -p "$DIR/deploy/maintenance"
+cat > /etc/cron.d/zogency-cleanup <<'CRON'
+0 4 * * 0 root /opt/zogency/deploy/cleanup.sh >> /var/log/zogency-cleanup.log 2>&1
+CRON
+chmod 644 /etc/cron.d/zogency-cleanup
+
 # ── Build & start ───────────────────────────────────────────────────────────
 say "Building and starting the stack (first build takes a few minutes)…"
 mkdir -p "$DIR/deploy/backups"

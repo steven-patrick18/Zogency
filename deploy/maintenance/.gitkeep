@@ -1,0 +1,2 @@
+# Holds last-cleanup.json written by deploy/cleanup.sh (mounted read-only into
+# the web container so Settings → Server can show maintenance status).
