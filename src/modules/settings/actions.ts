@@ -16,53 +16,76 @@ async function assertWritable() {
   }
 }
 
+export type GeneralSettingsState = { error?: string; success?: string }
+
 const opt = (max: number) => z.string().trim().max(max).optional()
+// Accept a bare domain and normalise to a URL, so "brb.digital" doesn't fail
+// the whole save. Empty → undefined.
+const website = z
+  .string()
+  .trim()
+  .optional()
+  .transform((v) => (v && v.length ? (/^https?:\/\//i.test(v) ? v : `https://${v}`) : undefined))
+  .refine((v) => v === undefined || /^https?:\/\/[^\s.]+\.[^\s]+$/.test(v), 'Enter a valid website (e.g. brb.digital)')
 const generalSchema = z.object({
-  primaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+  primaryColor: z.string().trim().regex(/^#[0-9a-fA-F]{6}$/, 'Brand color must be a hex value like #4f46e5'),
   slaHours: z.coerce.number().int().min(1).max(168),
   revisionRoundDefault: z.coerce.number().int().min(0).max(10),
   emailSenderName: opt(100),
-  emailSenderAddress: z.string().email().optional().or(z.literal('')),
-  timezone: z.string().min(1).max(64),
+  emailSenderAddress: z.union([z.literal(''), z.string().email('Enter a valid email address')]).optional(),
+  timezone: z.string().trim().min(1).max(64),
   country: opt(80),
   addressLine: opt(200),
   city: opt(80),
   stateRegion: opt(80),
   postalCode: opt(20),
   phone: opt(30),
-  websiteUrl: z.string().url().optional().or(z.literal('')),
+  websiteUrl: website,
   taxId: opt(40),
 })
 
-export async function updateGeneralSettings(formData: FormData) {
+// useActionState signature so validation problems are shown, not swallowed.
+export async function updateGeneralSettings(
+  _prev: GeneralSettingsState,
+  formData: FormData,
+): Promise<GeneralSettingsState> {
   await requirePermission('settings.manage')
-  const data = generalSchema.parse(Object.fromEntries(formData))
+  const parsed = generalSchema.safeParse(Object.fromEntries(formData))
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? 'Some fields are invalid.' }
+  }
+  const data = parsed.data
   const nn = (v: string | undefined) => (v && v.length ? v : null) // '' → null
-  await withTenant(async () => {
-    await assertWritable()
-    const before = await prisma.tenantSettings.findFirst()
-    await prisma.tenantSettings.update({
-      where: { id: before!.id },
-      data: {
-        primaryColor: data.primaryColor,
-        slaHours: data.slaHours,
-        revisionRoundDefault: data.revisionRoundDefault,
-        emailSenderName: nn(data.emailSenderName),
-        emailSenderAddress: nn(data.emailSenderAddress),
-        timezone: data.timezone,
-        country: nn(data.country),
-        addressLine: nn(data.addressLine),
-        city: nn(data.city),
-        stateRegion: nn(data.stateRegion),
-        postalCode: nn(data.postalCode),
-        phone: nn(data.phone),
-        websiteUrl: nn(data.websiteUrl),
-        taxId: nn(data.taxId),
-      },
+  try {
+    await withTenant(async () => {
+      await assertWritable()
+      const before = await prisma.tenantSettings.findFirst()
+      await prisma.tenantSettings.update({
+        where: { id: before!.id },
+        data: {
+          primaryColor: data.primaryColor,
+          slaHours: data.slaHours,
+          revisionRoundDefault: data.revisionRoundDefault,
+          emailSenderName: nn(data.emailSenderName),
+          emailSenderAddress: nn(data.emailSenderAddress),
+          timezone: data.timezone,
+          country: nn(data.country),
+          addressLine: nn(data.addressLine),
+          city: nn(data.city),
+          stateRegion: nn(data.stateRegion),
+          postalCode: nn(data.postalCode),
+          phone: nn(data.phone),
+          websiteUrl: nn(data.websiteUrl),
+          taxId: nn(data.taxId),
+        },
+      })
+      await audit('settings.update', 'tenant_settings', before!.id, { ...before }, data)
     })
-    await audit('settings.update', 'tenant_settings', before!.id, { ...before }, data)
-  })
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : 'Could not save settings.' }
+  }
   revalidatePath('/settings')
+  return { success: 'Settings saved.' }
 }
 
 export async function createDepartment(formData: FormData) {
