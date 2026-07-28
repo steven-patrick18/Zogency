@@ -3,21 +3,52 @@ import { requirePermission, withTenant } from '@/lib/authz'
 import { prisma } from '@/lib/db/prisma'
 import { maskEmail, maskPhone } from '@/lib/mask'
 
-export default async function LeadsPage() {
+const inputCls = 'rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none'
+
+export default async function LeadsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; status?: string; source?: string; owner?: string }>
+}) {
   const session = await requirePermission('leads.view')
   const canSeeContact = session.user.permissions.includes('leads.view_contact')
-  const leads = await withTenant(() =>
-    prisma.lead.findMany({
-      where: { archivedAt: null },
-      include: { source: true, status: true },
-      orderBy: { createdAt: 'desc' },
-      take: 100,
-    }),
-  )
-  const owners = await withTenant(() =>
-    prisma.user.findMany({ select: { id: true, name: true } }),
+  const sp = await searchParams
+  const q = (sp.q ?? '').trim()
+  const statusId = sp.status ?? ''
+  const sourceId = sp.source ?? ''
+  const owner = sp.owner ?? ''
+
+  const [leads, owners, statuses, sources] = await withTenant(() =>
+    Promise.all([
+      prisma.lead.findMany({
+        where: {
+          archivedAt: null,
+          ...(q
+            ? {
+                OR: [
+                  { name: { contains: q, mode: 'insensitive' } },
+                  { company: { contains: q, mode: 'insensitive' } },
+                  { email: { contains: q, mode: 'insensitive' } },
+                  { phone: { contains: q } },
+                  { city: { contains: q, mode: 'insensitive' } },
+                ],
+              }
+            : {}),
+          ...(statusId ? { statusId } : {}),
+          ...(sourceId ? { sourceId } : {}),
+          ...(owner === 'unassigned' ? { ownerId: null } : owner ? { ownerId: owner } : {}),
+        },
+        include: { source: true, status: true },
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+      }),
+      prisma.user.findMany({ select: { id: true, name: true } }),
+      prisma.leadStatus.findMany({ orderBy: { sort: 'asc' }, select: { id: true, name: true } }),
+      prisma.leadSource.findMany({ orderBy: { name: 'asc' }, select: { id: true, name: true } }),
+    ]),
   )
   const ownerName = new Map(owners.map((o) => [o.id, o.name]))
+  const hasFilters = !!(q || statusId || sourceId || owner)
   // Server component renders once per request — reading the clock is safe here.
   // eslint-disable-next-line react-hooks/purity
   const now = Date.now()
@@ -42,7 +73,44 @@ export default async function LeadsPage() {
         </div>
       </div>
 
-      <div className="mt-6 overflow-hidden rounded-xl border border-slate-200 bg-white">
+      {/* Search + filters (BRB) */}
+      <form method="GET" className="mt-6 flex flex-wrap items-center gap-2">
+        <input
+          name="q"
+          defaultValue={q}
+          placeholder="Search name, company, email, phone, city…"
+          className={`${inputCls} min-w-[16rem] flex-1`}
+        />
+        <select name="status" defaultValue={statusId} className={inputCls}>
+          <option value="">All statuses</option>
+          {statuses.map((s) => (
+            <option key={s.id} value={s.id}>{s.name}</option>
+          ))}
+        </select>
+        <select name="source" defaultValue={sourceId} className={inputCls}>
+          <option value="">All sources</option>
+          {sources.map((s) => (
+            <option key={s.id} value={s.id}>{s.name}</option>
+          ))}
+        </select>
+        <select name="owner" defaultValue={owner} className={inputCls}>
+          <option value="">All owners</option>
+          <option value="unassigned">Unassigned</option>
+          {owners.map((o) => (
+            <option key={o.id} value={o.id}>{o.name}</option>
+          ))}
+        </select>
+        <button className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500">
+          Search
+        </button>
+        {hasFilters && (
+          <Link href="/leads" className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50">
+            Clear
+          </Link>
+        )}
+      </form>
+
+      <div className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-white">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
             <tr>
@@ -59,7 +127,9 @@ export default async function LeadsPage() {
             {leads.length === 0 && (
               <tr>
                 <td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-400">
-                  No leads yet — add one manually, import a CSV, or wire an ad campaign.
+                  {hasFilters
+                    ? 'No leads match your search or filters.'
+                    : 'No leads yet — add one manually, import a CSV, or wire an ad campaign.'}
                 </td>
               </tr>
             )}

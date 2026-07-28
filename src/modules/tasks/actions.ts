@@ -38,10 +38,16 @@ const createTaskSchema = z.object({
   title: z.string().min(1, 'Title required'),
   projectId: z.string().uuid().optional().or(z.literal('')),
   departmentId: z.string().uuid().optional().or(z.literal('')),
-  assigneeId: z.string().uuid().optional().or(z.literal('')),
   deadline: z.string().optional().or(z.literal('')),
   priority: z.enum(['low', 'medium', 'high', 'urgent']).default('medium'),
 })
+const uuid = z.string().uuid()
+
+/** Assignees come as repeated `assigneeIds` fields (multi-select, BRB). */
+function readAssigneeIds(formData: FormData, fallback: string): string[] {
+  const ids = [...new Set(formData.getAll('assigneeIds').map(String).filter((v) => uuid.safeParse(v).success))]
+  return ids.length > 0 ? ids : [fallback]
+}
 
 export async function createTaskAction(_p: TaskActionState, formData: FormData): Promise<TaskActionState> {
   const session = await requireSession()
@@ -49,6 +55,7 @@ export async function createTaskAction(_p: TaskActionState, formData: FormData):
   const parsed = createTaskSchema.safeParse(Object.fromEntries(formData))
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' }
   const d = parsed.data
+  const assigneeIds = readAssigneeIds(formData, session.user.id)
 
   await withTenant(async () => {
     const task = await prisma.task.create({
@@ -56,15 +63,36 @@ export async function createTaskAction(_p: TaskActionState, formData: FormData):
         title: d.title,
         projectId: d.projectId || null,
         departmentId: d.departmentId || null,
-        assigneeId: d.assigneeId || session.user.id,
+        assigneeId: assigneeIds[0], // primary assignee (legacy index)
         deadline: d.deadline ? new Date(d.deadline) : null,
         priority: d.priority,
       }),
     })
-    await audit('task.create', 'task', task.id, null, { title: d.title })
+    await prisma.taskAssignee.createMany({
+      data: assigneeIds.map((userId) => scoped({ taskId: task.id, userId })),
+      skipDuplicates: true,
+    })
+    await audit('task.create', 'task', task.id, null, { title: d.title, assignees: assigneeIds.length })
   })
   revalidatePath('/tasks')
   return { success: 'Task created' }
+}
+
+/** Replace a task's assignee set (BRB — reassign to one or many). */
+export async function setTaskAssigneesAction(formData: FormData): Promise<void> {
+  const session = await requirePermission('tasks.edit')
+  const taskId = uuid.parse(formData.get('taskId'))
+  const assigneeIds = readAssigneeIds(formData, session.user.id)
+  await withTenant(async () => {
+    await prisma.taskAssignee.deleteMany({ where: { taskId } })
+    await prisma.taskAssignee.createMany({
+      data: assigneeIds.map((userId) => scoped({ taskId, userId })),
+      skipDuplicates: true,
+    })
+    await prisma.task.update({ where: { id: taskId }, data: { assigneeId: assigneeIds[0] } })
+    await audit('task.reassign', 'task', taskId, null, { assignees: assigneeIds.length })
+  })
+  revalidatePath('/tasks')
 }
 
 export async function toggleOnboardingItemAction(formData: FormData) {

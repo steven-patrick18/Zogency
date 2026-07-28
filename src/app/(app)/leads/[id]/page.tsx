@@ -5,6 +5,7 @@ import { getLeadTimeline } from '@/modules/pipeline/service'
 import { StatusChangeModal } from '@/modules/pipeline/status-modal'
 import { maskEmail, maskPhone } from '@/lib/mask'
 import { BantForm, ContactReveal, LogCallForm, ReassignForm } from './panels'
+import { LeadMeetingForm } from './lead-meeting-form'
 
 export default async function LeadDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const session = await requirePermission('leads.view')
@@ -18,17 +19,18 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
       include: { source: true, status: true },
     })
     if (!lead) return null
-    const [statuses, users, bant, timeline, deal] = await Promise.all([
+    const [statuses, users, bant, timeline, deal, meetings] = await Promise.all([
       prisma.leadStatus.findMany({ orderBy: { sort: 'asc' } }),
       prisma.user.findMany({ where: { status: 'active' }, select: { id: true, name: true } }),
       prisma.bantQualification.findUnique({ where: { leadId: id } }),
       getLeadTimeline(id),
       prisma.deal.findUnique({ where: { leadId: id } }),
+      prisma.meeting.findMany({ where: { leadId: id }, orderBy: { meetingAt: 'desc' } }),
     ])
-    return { lead, statuses, users, bant, timeline, deal }
+    return { lead, statuses, users, bant, timeline, deal, meetings }
   })
   if (!data) notFound()
-  const { lead, statuses, users, bant, timeline, deal } = data
+  const { lead, statuses, users, bant, timeline, deal, meetings } = data
   const userName = new Map(users.map((u) => [u.id, u.name]))
 
   return (
@@ -149,6 +151,35 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
           </a>
         )}
         <LogCallForm leadId={lead.id} />
+
+        {/* Prospect meetings (BRB) */}
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="flex items-center justify-between">
+            <h2 className="font-semibold text-slate-900">Meetings</h2>
+            <LeadMeetingForm leadId={lead.id} />
+          </div>
+          <ul className="mt-3 space-y-2">
+            {meetings.map((m) => (
+              <li key={m.id} className="rounded-lg border border-slate-100 bg-slate-50 p-2.5 text-sm">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium text-slate-800">{m.title}</span>
+                  {m.recordingUrl && (
+                    <a href={m.recordingUrl} target="_blank" rel="noreferrer" className="shrink-0 text-xs font-medium text-indigo-600 hover:underline">
+                      ▶ rec
+                    </a>
+                  )}
+                </div>
+                <p className="text-xs text-slate-400">{new Date(m.meetingAt).toLocaleString()}</p>
+                {m.summaryStatus === 'done' && m.aiSummary && (
+                  <p className="mt-1 whitespace-pre-wrap rounded bg-white p-2 text-xs text-slate-600">{m.aiSummary}</p>
+                )}
+                {m.summaryStatus === 'pending' && <p className="mt-1 text-xs text-amber-600">AI summary generating…</p>}
+              </li>
+            ))}
+            {meetings.length === 0 && <p className="text-sm text-slate-400">No meetings logged for this prospect.</p>}
+          </ul>
+        </div>
+
         <BantForm leadId={lead.id} bant={bant} />
         <ReassignForm
           leadId={lead.id}

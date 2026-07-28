@@ -121,6 +121,7 @@ model User {
 
   tenant    Tenant     @relation(fields: [tenantId], references: [id])
   userRoles UserRole[]
+  taskAssignees TaskAssignee[]
 
   @@unique([tenantId, email])
   @@map("users")
@@ -681,10 +682,26 @@ model Task {
   project        Project?           @relation(fields: [projectId], references: [id])
   sowDeliverable SowDeliverable?    @relation(fields: [sowDeliverableId], references: [id])
   statusHistory  TaskStatusHistory[]
+  assignees      TaskAssignee[]
 
   @@index([tenantId, departmentId, status])
   @@index([tenantId, assigneeId, status])
   @@map("tasks")
+}
+
+// A task can be assigned to several people (BRB). assigneeId above stays as the
+// primary/first assignee for the existing indexes and legacy queries.
+model TaskAssignee {
+  tenantId String @map("tenant_id") @db.Uuid
+  taskId   String @map("task_id") @db.Uuid
+  userId   String @map("user_id") @db.Uuid
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, userId])
+  @@index([tenantId, userId])
+  @@map("task_assignees")
 }
 
 // Append-only (FR-9.3 turnaround metrics).
@@ -1584,6 +1601,7 @@ model Meeting {
   id             String    @id @default(uuid(7)) @db.Uuid
   tenantId       String    @map("tenant_id") @db.Uuid
   clientId       String?   @map("client_id") @db.Uuid
+  leadId         String?   @map("lead_id") @db.Uuid // prospect meeting (pre-client)
   title          String
   meetingAt      DateTime  @map("meeting_at")
   recordingUrl   String?   @map("recording_url")

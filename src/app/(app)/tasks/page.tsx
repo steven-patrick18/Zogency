@@ -15,7 +15,7 @@ export default async function TasksPage() {
   await requirePermission('tasks.view')
   const [tasks, departments, users, projects] = await withTenant(() =>
     Promise.all([
-      prisma.task.findMany({ include: { project: { include: { client: true } } }, orderBy: { createdAt: 'desc' } }),
+      prisma.task.findMany({ include: { project: { include: { client: true } }, assignees: true }, orderBy: { createdAt: 'desc' } }),
       prisma.department.findMany({ orderBy: { sort: 'asc' } }),
       prisma.user.findMany({ where: { status: 'active' }, select: { id: true, name: true } }),
       prisma.project.findMany({ where: { status: 'active' }, select: { id: true, name: true } }),
@@ -53,7 +53,9 @@ export default async function TasksPage() {
                       {t.departmentId ? ` · ${deptName.get(t.departmentId)}` : ''}
                     </p>
                     <p className="text-xs text-slate-400">
-                      {t.assigneeId ? (userName.get(t.assigneeId) ?? '') : 'Unassigned'}
+                      {t.assignees.length > 0
+                        ? t.assignees.map((a) => userName.get(a.userId) ?? '?').join(', ')
+                        : 'Unassigned'}
                       {t.deadline ? ` · due ${t.deadline.toDateString()}` : ''}
                       {` · ${t.priority}`}
                     </p>

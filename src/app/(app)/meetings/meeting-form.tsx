@@ -14,7 +14,13 @@ function Feedback({ state }: { state: MeetingActionState }) {
   return null
 }
 
-export function MeetingForm({ clients }: { clients: Array<{ id: string; name: string }> }) {
+export function MeetingForm({
+  clients,
+  leads = [],
+}: {
+  clients: Array<{ id: string; name: string }>
+  leads?: Array<{ id: string; name: string }>
+}) {
   const [state, formAction, pending] = useActionState<MeetingActionState, FormData>(createMeetingAction, {})
 
   return (
@@ -34,6 +40,16 @@ export function MeetingForm({ clients }: { clients: Array<{ id: string; name: st
               </option>
             ))}
           </select>
+          <select name="leadId" defaultValue="" className={field}>
+            <option value="">Prospect / lead (optional)…</option>
+            {leads.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="grid grid-cols-1 gap-2">
           <input name="recordingUrl" type="url" placeholder="Recording URL (optional)" className={field} />
         </div>
         <textarea name="transcript" rows={4} placeholder="Transcript (optional)" className={field} />

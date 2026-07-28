@@ -6,13 +6,15 @@ import { MeetingForm } from './meeting-form'
 export default async function MeetingsPage() {
   await requirePermission('clients.view')
 
-  const [meetings, clients] = await withTenant(() =>
+  const [meetings, clients, leads] = await withTenant(() =>
     Promise.all([
       prisma.meeting.findMany({ orderBy: { meetingAt: 'desc' } }),
       prisma.client.findMany({ select: { id: true, name: true }, orderBy: { name: 'asc' } }),
+      prisma.lead.findMany({ where: { archivedAt: null }, select: { id: true, name: true, company: true }, orderBy: { createdAt: 'desc' }, take: 200 }),
     ]),
   )
   const clientName = new Map(clients.map((c) => [c.id, c.name]))
+  const leadName = new Map(leads.map((l) => [l.id, l.company ? `${l.name} · ${l.company}` : l.name]))
 
   return (
     <div className="space-y-6">
@@ -21,7 +23,10 @@ export default async function MeetingsPage() {
         <p className="mt-0.5 text-sm text-slate-500">Recordings, transcripts, and AI summaries.</p>
       </div>
 
-      <MeetingForm clients={clients.map((c) => ({ id: c.id, name: c.name }))} />
+      <MeetingForm
+        clients={clients.map((c) => ({ id: c.id, name: c.name }))}
+        leads={leads.map((l) => ({ id: l.id, name: leadName.get(l.id) ?? l.name }))}
+      />
 
       <div className="space-y-4">
         {meetings.map((m) => (
@@ -31,7 +36,11 @@ export default async function MeetingsPage() {
                 <h2 className="font-semibold text-slate-900">{m.title}</h2>
                 <p className="mt-0.5 text-xs text-slate-400">
                   {new Date(m.meetingAt).toLocaleString()} ·{' '}
-                  {m.clientId ? (clientName.get(m.clientId) ?? 'Unknown client') : 'No client'}
+                  {m.clientId
+                    ? (clientName.get(m.clientId) ?? 'Unknown client')
+                    : m.leadId
+                      ? `Prospect: ${leadName.get(m.leadId) ?? 'lead'}`
+                      : 'No client'}
                 </p>
               </div>
               {m.recordingUrl && (

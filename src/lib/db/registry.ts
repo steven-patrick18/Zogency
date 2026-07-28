@@ -72,6 +72,7 @@ export const TENANT_SCOPED_MODELS = new Set([
   'EmployeeExit',
   'AttendanceRecord',
   'AttendanceAdjustment',
+  'TaskAssignee',
   'LeaveType',
   'LeaveBalance',
   'LeaveRequest',
