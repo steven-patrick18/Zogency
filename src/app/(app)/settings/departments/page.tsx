@@ -1,6 +1,7 @@
 import { withTenant } from '@/lib/authz'
 import { prisma } from '@/lib/db/prisma'
-import { createDepartment, deleteDepartment } from '@/modules/settings/actions'
+import { createDepartment } from '@/modules/settings/actions'
+import { DeleteDeptButton } from './delete-dept-button'
 
 export default async function DepartmentsPage() {
   const departments = await withTenant(() =>
@@ -16,10 +17,7 @@ export default async function DepartmentsPage() {
         {departments.map((d) => (
           <li key={d.id} className="flex items-center justify-between px-4 py-3">
             <span className="text-sm font-medium text-slate-900">{d.name}</span>
-            <form action={deleteDepartment}>
-              <input type="hidden" name="id" value={d.id} />
-              <button className="text-xs font-medium text-red-600 hover:underline">Remove</button>
-            </form>
+            <DeleteDeptButton id={d.id} name={d.name} />
           </li>
         ))}
       </ul>

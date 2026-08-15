@@ -109,6 +109,16 @@ export async function deleteDepartment(formData: FormData) {
     await assertWritable()
     const before = await prisma.department.findUnique({ where: { id } })
     if (!before) return
+    // Don't orphan people or task boards — block deletion while in use.
+    const [employees, tasks] = await Promise.all([
+      prisma.employee.count({ where: { departmentId: id } }),
+      prisma.task.count({ where: { departmentId: id } }),
+    ])
+    if (employees > 0 || tasks > 0) {
+      throw new Error(
+        `Can't remove "${before.name}" — it still has ${employees} employee(s) and ${tasks} task(s). Reassign them first.`,
+      )
+    }
     await prisma.department.delete({ where: { id } })
     await audit('department.delete', 'department', id, { name: before.name }, null)
   })

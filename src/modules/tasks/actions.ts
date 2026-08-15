@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { audit } from '@/lib/audit'
 import { requirePermission, requireSession, withTenant } from '@/lib/authz'
 import { prisma, scoped } from '@/lib/db/prisma'
+import { notify } from '@/lib/notify'
 
 export type TaskActionState = { error?: string; success?: string }
 
@@ -16,7 +17,7 @@ export async function changeTaskStatusAction(formData: FormData) {
   const to = z.enum(TASK_STATUSES).parse(formData.get('to'))
 
   await withTenant(async () => {
-    const task = await prisma.task.findUniqueOrThrow({ where: { id: taskId } })
+    const task = await prisma.task.findUniqueOrThrow({ where: { id: taskId }, include: { assignees: true } })
     if (task.status === to) return
     await prisma.task.update({ where: { id: taskId }, data: { status: to } })
     await prisma.taskStatusHistory.create({
@@ -29,6 +30,13 @@ export async function changeTaskStatusAction(formData: FormData) {
         data: { status: to === 'done' ? 'delivered' : 'in_progress' },
       })
     }
+    // Notify the task's assignees (except whoever made the change).
+    const by = session.user.name ?? 'Someone'
+    for (const a of task.assignees) {
+      if (a.userId !== session.user.id) {
+        await notify(a.userId, 'task.status_changed', { by, title: task.title, status: to })
+      }
+    }
     await audit('task.status_change', 'task', taskId, { status: task.status }, { status: to })
   })
   revalidatePath('/tasks')
@@ -36,6 +44,7 @@ export async function changeTaskStatusAction(formData: FormData) {
 
 const createTaskSchema = z.object({
   title: z.string().min(1, 'Title required'),
+  description: z.string().max(4000).optional().or(z.literal('')),
   projectId: z.string().uuid().optional().or(z.literal('')),
   departmentId: z.string().uuid().optional().or(z.literal('')),
   deadline: z.string().optional().or(z.literal('')),
@@ -47,6 +56,15 @@ const uuid = z.string().uuid()
 function readAssigneeIds(formData: FormData, fallback: string): string[] {
   const ids = [...new Set(formData.getAll('assigneeIds').map(String).filter((v) => uuid.safeParse(v).success))]
   return ids.length > 0 ? ids : [fallback]
+}
+
+/** Notify each assignee (except the actor) that a task landed on their plate. */
+async function notifyAssigned(userIds: string[], actorId: string, actorName: string, title: string, deadline?: string) {
+  for (const userId of userIds) {
+    if (userId !== actorId) {
+      await notify(userId, 'task.assigned', { by: actorName, title, deadline: deadline || null })
+    }
+  }
 }
 
 export async function createTaskAction(_p: TaskActionState, formData: FormData): Promise<TaskActionState> {
@@ -61,6 +79,7 @@ export async function createTaskAction(_p: TaskActionState, formData: FormData):
     const task = await prisma.task.create({
       data: scoped({
         title: d.title,
+        description: d.description || null,
         projectId: d.projectId || null,
         departmentId: d.departmentId || null,
         assigneeId: assigneeIds[0], // primary assignee (legacy index)
@@ -72,6 +91,7 @@ export async function createTaskAction(_p: TaskActionState, formData: FormData):
       data: assigneeIds.map((userId) => scoped({ taskId: task.id, userId })),
       skipDuplicates: true,
     })
+    await notifyAssigned(assigneeIds, session.user.id, session.user.name ?? 'Someone', d.title, d.deadline)
     await audit('task.create', 'task', task.id, null, { title: d.title, assignees: assigneeIds.length })
   })
   revalidatePath('/tasks')
@@ -84,12 +104,17 @@ export async function setTaskAssigneesAction(formData: FormData): Promise<void> 
   const taskId = uuid.parse(formData.get('taskId'))
   const assigneeIds = readAssigneeIds(formData, session.user.id)
   await withTenant(async () => {
+    const before = await prisma.task.findUniqueOrThrow({ where: { id: taskId }, include: { assignees: true } })
+    const prev = new Set(before.assignees.map((a) => a.userId))
     await prisma.taskAssignee.deleteMany({ where: { taskId } })
     await prisma.taskAssignee.createMany({
       data: assigneeIds.map((userId) => scoped({ taskId, userId })),
       skipDuplicates: true,
     })
     await prisma.task.update({ where: { id: taskId }, data: { assigneeId: assigneeIds[0] } })
+    // Only notify the newly-added people.
+    const fresh = assigneeIds.filter((id) => !prev.has(id))
+    await notifyAssigned(fresh, session.user.id, session.user.name ?? 'Someone', before.title)
     await audit('task.reassign', 'task', taskId, null, { assignees: assigneeIds.length })
   })
   revalidatePath('/tasks')

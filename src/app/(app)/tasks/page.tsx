@@ -12,7 +12,8 @@ const COLUMNS: Array<{ key: 'todo' | 'in_progress' | 'review' | 'done' | 'blocke
 ]
 
 export default async function TasksPage() {
-  await requirePermission('tasks.view')
+  const session = await requirePermission('tasks.view')
+  const canEdit = session.user.permissions.includes('tasks.edit')
   const [tasks, departments, users, projects] = await withTenant(() =>
     Promise.all([
       prisma.task.findMany({ include: { project: { include: { client: true } }, assignees: true }, orderBy: { createdAt: 'desc' } }),
@@ -48,6 +49,9 @@ export default async function TasksPage() {
                 {column.map((t) => (
                   <div key={t.id} className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
                     <p className="text-sm font-medium text-slate-900">{t.title}</p>
+                    {t.description && (
+                      <p className="mt-0.5 line-clamp-2 text-xs text-slate-500">{t.description}</p>
+                    )}
                     <p className="mt-1 text-xs text-slate-500">
                       {t.project ? `${t.project.client.name}` : 'No project'}
                       {t.departmentId ? ` · ${deptName.get(t.departmentId)}` : ''}
@@ -59,19 +63,21 @@ export default async function TasksPage() {
                       {t.deadline ? ` · due ${t.deadline.toDateString()}` : ''}
                       {` · ${t.priority}`}
                     </p>
-                    <form action={changeTaskStatusAction} className="mt-2 flex gap-1">
-                      <input type="hidden" name="taskId" value={t.id} />
-                      {COLUMNS.filter((c) => c.key !== t.status).slice(0, 4).map((c) => (
-                        <button
-                          key={c.key}
-                          name="to"
-                          value={c.key}
-                          className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600 hover:bg-indigo-100 hover:text-indigo-700"
-                        >
-                          {c.label}
-                        </button>
-                      ))}
-                    </form>
+                    {canEdit && (
+                      <form action={changeTaskStatusAction} className="mt-2 flex gap-1">
+                        <input type="hidden" name="taskId" value={t.id} />
+                        {COLUMNS.filter((c) => c.key !== t.status).slice(0, 4).map((c) => (
+                          <button
+                            key={c.key}
+                            name="to"
+                            value={c.key}
+                            className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600 hover:bg-indigo-100 hover:text-indigo-700"
+                          >
+                            {c.label}
+                          </button>
+                        ))}
+                      </form>
+                    )}
                   </div>
                 ))}
                 {column.length === 0 && <p className="px-2 py-3 text-center text-xs text-slate-400">Empty</p>}
