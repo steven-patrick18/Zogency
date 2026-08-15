@@ -13,9 +13,16 @@ export async function postChatAction(formData: FormData) {
   const body = String(formData.get('body') ?? '').trim()
   if (!body) return
   await withTenant(async () => {
-    // Resolve @Name mentions against active users.
+    // Resolve @Name mentions against active users — match the full name first
+    // (picker inserts it), then the first name as a fallback.
     const users = await prisma.user.findMany({ where: { status: 'active' }, select: { id: true, name: true } })
-    const mentioned = users.filter((u) => new RegExp(`@${u.name.split(' ')[0]}\\b`, 'i').test(body)).map((u) => u.id)
+    const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const mentioned = users
+      .filter((u) => {
+        const first = u.name.split(' ')[0]
+        return new RegExp(`@(${esc(u.name)}|${esc(first)})\\b`, 'i').test(body)
+      })
+      .map((u) => u.id)
     await prisma.chatMessage.create({
       data: scoped({ channel, authorId: session.user.id, body, mentions: mentioned as unknown as Prisma.InputJsonValue }),
     })

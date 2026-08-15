@@ -22,6 +22,7 @@ export type GeneralSettingsValues = {
   phone: string
   websiteUrl: string
   taxId: string
+  requireTaskApproval: boolean
 }
 
 export function GeneralSettingsForm({ values, zones }: { values: GeneralSettingsValues; zones: string[] }) {
@@ -54,6 +55,15 @@ export function GeneralSettingsForm({ values, zones }: { values: GeneralSettings
             <input name="emailSenderAddress" type="email" defaultValue={values.emailSenderAddress} className={field} />
           </label>
         </div>
+        <label className="flex items-start gap-2 border-t border-slate-100 pt-4 text-sm">
+          <input type="checkbox" name="requireTaskApproval" defaultChecked={values.requireTaskApproval} className="mt-0.5" />
+          <span>
+            <span className="font-medium text-slate-700">Require review approval before tasks can be completed</span>
+            <span className="block text-xs text-slate-400">
+              Tasks must pass through “Review”, and only an approver (a role with Approvals) can mark them Done.
+            </span>
+          </span>
+        </label>
       </section>
 
       {/* Agency profile */}

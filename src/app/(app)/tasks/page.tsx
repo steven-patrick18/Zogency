@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { requirePermission, withTenant } from '@/lib/authz'
 import { prisma } from '@/lib/db/prisma'
 import { changeTaskStatusAction } from '@/modules/tasks/actions'
@@ -14,16 +15,25 @@ const COLUMNS: Array<{ key: 'todo' | 'in_progress' | 'review' | 'done' | 'blocke
 export default async function TasksPage() {
   const session = await requirePermission('tasks.view')
   const canEdit = session.user.permissions.includes('tasks.edit')
-  const [tasks, departments, users, projects] = await withTenant(() =>
+  const canApprove = session.user.permissions.includes('approvals.act')
+  const [tasks, departments, users, projects, settings] = await withTenant(() =>
     Promise.all([
-      prisma.task.findMany({ include: { project: { include: { client: true } }, assignees: true }, orderBy: { createdAt: 'desc' } }),
+      prisma.task.findMany({ include: { project: { include: { client: true } }, assignees: true, _count: { select: { attachments: true } } }, orderBy: { createdAt: 'desc' } }),
       prisma.department.findMany({ orderBy: { sort: 'asc' } }),
       prisma.user.findMany({ where: { status: 'active' }, select: { id: true, name: true } }),
       prisma.project.findMany({ where: { status: 'active' }, select: { id: true, name: true } }),
+      prisma.tenantSettings.findFirst({ select: { requireTaskApproval: true } }),
     ]),
   )
   const deptName = new Map(departments.map((d) => [d.id, d.name]))
   const userName = new Map(users.map((u) => [u.id, u.name]))
+  const gate = settings?.requireTaskApproval ?? false
+  // With the gate on, "Done" is only offered to an approver on a task in Review.
+  const allowedTargets = (status: string) =>
+    COLUMNS.filter((c) => c.key !== status).filter((c) => {
+      if (c.key === 'done' && gate) return canApprove && status === 'review'
+      return true
+    }).slice(0, 4)
 
   return (
     <div>
@@ -48,13 +58,21 @@ export default async function TasksPage() {
               <div className="mt-1 space-y-2">
                 {column.map((t) => (
                   <div key={t.id} className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-                    <p className="text-sm font-medium text-slate-900">{t.title}</p>
+                    <Link href={`/tasks/${t.id}`} className="text-sm font-medium text-slate-900 hover:text-indigo-600">{t.title}</Link>
                     {t.description && (
                       <p className="mt-0.5 line-clamp-2 text-xs text-slate-500">{t.description}</p>
+                    )}
+                    {t.tags.length > 0 && (
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {t.tags.map((tag) => (
+                          <span key={tag} className="rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium text-indigo-700">{tag}</span>
+                        ))}
+                      </div>
                     )}
                     <p className="mt-1 text-xs text-slate-500">
                       {t.project ? `${t.project.client.name}` : 'No project'}
                       {t.departmentId ? ` · ${deptName.get(t.departmentId)}` : ''}
+                      {t._count.attachments > 0 ? ` · 📎 ${t._count.attachments}` : ''}
                     </p>
                     <p className="text-xs text-slate-400">
                       {t.assignees.length > 0
@@ -64,9 +82,9 @@ export default async function TasksPage() {
                       {` · ${t.priority}`}
                     </p>
                     {canEdit && (
-                      <form action={changeTaskStatusAction} className="mt-2 flex gap-1">
+                      <form action={changeTaskStatusAction} className="mt-2 flex flex-wrap gap-1">
                         <input type="hidden" name="taskId" value={t.id} />
-                        {COLUMNS.filter((c) => c.key !== t.status).slice(0, 4).map((c) => (
+                        {allowedTargets(t.status).map((c) => (
                           <button
                             key={c.key}
                             name="to"

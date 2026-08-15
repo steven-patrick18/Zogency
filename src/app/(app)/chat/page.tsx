@@ -89,7 +89,7 @@ export default async function ChatPage({
       </div>
 
       <div className="mt-3">
-        <ChatForm channel={channel} />
+        <ChatForm channel={channel} users={users.map((u) => ({ id: u.id, name: u.name }))} />
       </div>
     </div>
   )

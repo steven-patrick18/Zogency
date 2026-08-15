@@ -43,6 +43,7 @@ export default async function GeneralSettingsPage() {
         phone: settings.phone ?? '',
         websiteUrl: settings.websiteUrl ?? '',
         taxId: settings.taxId ?? '',
+        requireTaskApproval: settings.requireTaskApproval,
       }}
     />
   )

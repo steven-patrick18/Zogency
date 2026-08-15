@@ -42,6 +42,7 @@ const generalSchema = z.object({
   phone: opt(30),
   websiteUrl: website,
   taxId: opt(40),
+  requireTaskApproval: z.string().optional(), // checkbox → 'on' when ticked
 })
 
 // useActionState signature so validation problems are shown, not swallowed.
@@ -77,6 +78,7 @@ export async function updateGeneralSettings(
           phone: nn(data.phone),
           websiteUrl: nn(data.websiteUrl),
           taxId: nn(data.taxId),
+          requireTaskApproval: data.requireTaskApproval === 'on',
         },
       })
       await audit('settings.update', 'tenant_settings', before!.id, { ...before }, data)

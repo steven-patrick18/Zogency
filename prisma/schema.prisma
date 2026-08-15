@@ -94,6 +94,9 @@ model TenantSettings {
   agentIdleLogoutMin       Int @default(10)  @map("agent_idle_logout_min")  // agent auto-pauses after this many idle minutes
   // Deep-monitoring data retention — screen captures older than this are purged.
   captureRetentionHours    Int @default(336) @map("capture_retention_hours") // 14 days default
+  // Task completion workflow: when on, a task must pass through Review and only
+  // an approver (approvals.act) can mark it Done (BRB).
+  requireTaskApproval      Boolean @default(false) @map("require_task_approval")
   updatedAt            DateTime @updatedAt @map("updated_at")
 
   tenant Tenant @relation(fields: [tenantId], references: [id])
@@ -673,6 +676,7 @@ model Task {
   sowDeliverableId String?      @map("sow_deliverable_id") @db.Uuid
   title            String
   description      String?
+  tags             String[]     @default([])
   deadline         DateTime?    @db.Date
   priority         TaskPriority @default(medium)
   status           TaskStatus   @default(todo)
@@ -683,6 +687,7 @@ model Task {
   sowDeliverable SowDeliverable?    @relation(fields: [sowDeliverableId], references: [id])
   statusHistory  TaskStatusHistory[]
   assignees      TaskAssignee[]
+  attachments    TaskAttachment[]
 
   @@index([tenantId, departmentId, status])
   @@index([tenantId, assigneeId, status])
@@ -702,6 +707,24 @@ model TaskAssignee {
   @@id([taskId, userId])
   @@index([tenantId, userId])
   @@map("task_assignees")
+}
+
+// Task file attachments — stored as data-URIs (no object storage yet; ≤2MB each).
+model TaskAttachment {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  taskId     String   @map("task_id") @db.Uuid
+  name       String
+  mimeType   String   @map("mime_type")
+  data       String   // data:<mime>;base64,…
+  size       Int
+  uploadedBy String?  @map("uploaded_by") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, taskId])
+  @@map("task_attachments")
 }
 
 // Append-only (FR-9.3 turnaround metrics).
