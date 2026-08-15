@@ -12,6 +12,8 @@ export default async function LeadsPage({
 }) {
   const session = await requirePermission('leads.view')
   const canSeeContact = session.user.permissions.includes('leads.view_contact')
+  // Managers (who can reassign) see the whole pool; reps see only their own leads.
+  const canViewAll = session.user.permissions.includes('leads.reassign')
   const sp = await searchParams
   const q = (sp.q ?? '').trim()
   const statusId = sp.status ?? ''
@@ -37,6 +39,8 @@ export default async function LeadsPage({
           ...(statusId ? { statusId } : {}),
           ...(sourceId ? { sourceId } : {}),
           ...(owner === 'unassigned' ? { ownerId: null } : owner ? { ownerId: owner } : {}),
+          // Reps are restricted to their own leads regardless of any owner filter.
+          ...(canViewAll ? {} : { ownerId: session.user.id }),
         },
         include: { source: true, status: true },
         orderBy: { createdAt: 'desc' },
@@ -93,13 +97,15 @@ export default async function LeadsPage({
             <option key={s.id} value={s.id}>{s.name}</option>
           ))}
         </select>
-        <select name="owner" defaultValue={owner} className={inputCls}>
-          <option value="">All owners</option>
-          <option value="unassigned">Unassigned</option>
-          {owners.map((o) => (
-            <option key={o.id} value={o.id}>{o.name}</option>
-          ))}
-        </select>
+        {canViewAll && (
+          <select name="owner" defaultValue={owner} className={inputCls}>
+            <option value="">All owners</option>
+            <option value="unassigned">Unassigned</option>
+            {owners.map((o) => (
+              <option key={o.id} value={o.id}>{o.name}</option>
+            ))}
+          </select>
+        )}
         <button className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500">
           Search
         </button>

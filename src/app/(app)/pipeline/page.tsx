@@ -5,12 +5,17 @@ import { StatusChangeModal } from '@/modules/pipeline/status-modal'
 import { maybeRunSlaSweep } from '@/modules/automation/service'
 
 export default async function PipelinePage() {
-  await requirePermission('leads.view')
+  const session = await requirePermission('leads.view')
+  // Managers (leads.reassign) see the whole pipeline; reps see only their own.
+  const canViewAll = session.user.permissions.includes('leads.reassign')
   const [statuses, leads, users] = await withTenant(async () => {
     await maybeRunSlaSweep()
     return Promise.all([
       prisma.leadStatus.findMany({ orderBy: { sort: 'asc' } }),
-      prisma.lead.findMany({ where: { archivedAt: null }, orderBy: { createdAt: 'desc' } }),
+      prisma.lead.findMany({
+        where: { archivedAt: null, ...(canViewAll ? {} : { ownerId: session.user.id }) },
+        orderBy: { createdAt: 'desc' },
+      }),
       prisma.user.findMany({ select: { id: true, name: true } }),
     ])
   })

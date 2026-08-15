@@ -11,6 +11,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
   const session = await requirePermission('leads.view')
   const canSeeContact = session.user.permissions.includes('leads.view_contact')
   const canReveal = session.user.permissions.includes('calls.log')
+  const canViewAll = session.user.permissions.includes('leads.reassign')
   const { id } = await params
 
   const data = await withTenant(async () => {
@@ -19,6 +20,8 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
       include: { source: true, status: true },
     })
     if (!lead) return null
+    // Reps can only open their own leads (privacy).
+    if (!canViewAll && lead.ownerId !== session.user.id) return null
     const [statuses, users, bant, timeline, deal, meetings] = await Promise.all([
       prisma.leadStatus.findMany({ orderBy: { sort: 'asc' } }),
       prisma.user.findMany({ where: { status: 'active' }, select: { id: true, name: true } }),

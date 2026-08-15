@@ -4,13 +4,19 @@ import { summarizeMeetingAction } from '@/modules/meetings/actions'
 import { MeetingForm } from './meeting-form'
 
 export default async function MeetingsPage() {
-  await requirePermission('clients.view')
+  const session = await requirePermission('clients.view')
+  const canViewAll = session.user.permissions.includes('leads.reassign')
 
   const [meetings, clients, leads] = await withTenant(() =>
     Promise.all([
       prisma.meeting.findMany({ orderBy: { meetingAt: 'desc' } }),
       prisma.client.findMany({ select: { id: true, name: true }, orderBy: { name: 'asc' } }),
-      prisma.lead.findMany({ where: { archivedAt: null }, select: { id: true, name: true, company: true }, orderBy: { createdAt: 'desc' }, take: 200 }),
+      prisma.lead.findMany({
+        where: { archivedAt: null, ...(canViewAll ? {} : { ownerId: session.user.id }) },
+        select: { id: true, name: true, company: true },
+        orderBy: { createdAt: 'desc' },
+        take: 200,
+      }),
     ]),
   )
   const clientName = new Map(clients.map((c) => [c.id, c.name]))
