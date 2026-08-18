@@ -1,6 +1,7 @@
 import { withTenant } from '@/lib/authz'
 import { prisma } from '@/lib/db/prisma'
 import { GeneralSettingsForm } from './general-form'
+import { InvoiceBrandingForm } from './invoice-branding-form'
 
 // IANA time zones for the picker. `Intl.supportedValuesOf` returns legacy
 // aliases for some regions (e.g. Asia/Calcutta, not Asia/Kolkata), so we always
@@ -26,9 +27,10 @@ export default async function GeneralSettingsPage() {
   const zones = timeZones(settings.timezone)
 
   return (
-    <GeneralSettingsForm
-      zones={zones}
-      values={{
+    <div className="space-y-8">
+      <GeneralSettingsForm
+        zones={zones}
+        values={{
         primaryColor: settings.primaryColor,
         slaHours: settings.slaHours,
         revisionRoundDefault: settings.revisionRoundDefault,
@@ -44,7 +46,9 @@ export default async function GeneralSettingsPage() {
         websiteUrl: settings.websiteUrl ?? '',
         taxId: settings.taxId ?? '',
         requireTaskApproval: settings.requireTaskApproval,
-      }}
-    />
+        }}
+      />
+      <InvoiceBrandingForm currentTemplate={settings.invoiceTemplate} currentLogo={settings.logo} />
+    </div>
   )
 }

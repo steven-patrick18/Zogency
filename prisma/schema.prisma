@@ -97,6 +97,9 @@ model TenantSettings {
   // Task completion workflow: when on, a task must pass through Review and only
   // an approver (approvals.act) can mark it Done (BRB).
   requireTaskApproval      Boolean @default(false) @map("require_task_approval")
+  // Invoice branding — logo (data-URI) + which printable template to use.
+  logo                     String? // data:image/…;base64,… shown on printed invoices
+  invoiceTemplate          String  @default("classic") @map("invoice_template") // classic|modern|minimal
   updatedAt            DateTime @updatedAt @map("updated_at")
 
   tenant Tenant @relation(fields: [tenantId], references: [id])

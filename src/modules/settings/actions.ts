@@ -90,6 +90,42 @@ export async function updateGeneralSettings(
   return { success: 'Settings saved.' }
 }
 
+export type BrandingState = { error?: string; success?: string }
+
+/** Save the invoice logo + selected template (Settings → General). */
+export async function saveInvoiceBrandingAction(_prev: BrandingState, formData: FormData): Promise<BrandingState> {
+  await requirePermission('settings.manage')
+  const template = z.enum(['classic', 'modern', 'minimal']).catch('classic').parse(formData.get('template'))
+  const removeLogo = formData.get('removeLogo') === '1'
+  const file = formData.get('logo')
+
+  let logoUpdate: { logo?: string | null } = {}
+  if (removeLogo) {
+    logoUpdate = { logo: null }
+  } else if (file instanceof File && file.size > 0) {
+    if (!file.type.startsWith('image/')) return { error: 'Logo must be an image (PNG, JPG or SVG).' }
+    if (file.size > 500_000) return { error: 'Logo must be under 500 KB.' }
+    const buf = Buffer.from(await file.arrayBuffer())
+    logoUpdate = { logo: `data:${file.type};base64,${buf.toString('base64')}` }
+  }
+
+  try {
+    await withTenant(async () => {
+      await assertWritable()
+      const before = await prisma.tenantSettings.findFirst()
+      await prisma.tenantSettings.update({
+        where: { id: before!.id },
+        data: { invoiceTemplate: template, ...logoUpdate },
+      })
+      await audit('settings.invoice_branding', 'tenant_settings', before!.id, null, { template, logoChanged: 'logo' in logoUpdate })
+    })
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : 'Could not save.' }
+  }
+  revalidatePath('/settings')
+  return { success: 'Invoice branding saved.' }
+}
+
 export async function createDepartment(formData: FormData) {
   await requirePermission('settings.manage')
   const name = z.string().min(1).max(50).parse(formData.get('name'))

@@ -57,7 +57,7 @@ export default async function InvoicesPage() {
               <th className="px-4 py-3">Total (incl. GST)</th>
               <th className="px-4 py-3">Paid</th>
               <th className="px-4 py-3">Status</th>
-              {canManage && <th className="px-4 py-3" />}
+              <th className="px-4 py-3" />
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -79,11 +79,19 @@ export default async function InvoicesPage() {
                       {inv.status}
                     </span>
                   </td>
-                  {canManage && (
-                    <td className="px-4 py-3">
-                      {inv.status !== 'paid' && <PaymentForm invoiceId={inv.id} />}
-                    </td>
-                  )}
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-3">
+                      <a
+                        href={`/invoices/${inv.id}/print`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs font-medium text-indigo-600 hover:underline"
+                      >
+                        🖨 Print
+                      </a>
+                      {canManage && inv.status !== 'paid' && <PaymentForm invoiceId={inv.id} />}
+                    </div>
+                  </td>
                 </tr>
               )
             })}
