@@ -47,6 +47,7 @@ export function renderNotification(templateKey: string, payload: Record<string, 
     'ticket.new': (p) => `New support ticket from ${p.client}: "${p.subject}"`,
     'ticket.resolved': (p) => `Your ticket "${p.subject}" was marked resolved.`,
     'chat.mention': (p) => `${p.by} mentioned you in #${p.channel}.`,
+    'chat.dm': (p) => `${p.by} sent you a direct message.`,
     'task.assigned': (p) => `${p.by} assigned you a task: "${p.title}"${p.deadline ? ` — due ${p.deadline}` : ''}.`,
     'task.status_changed': (p) =>
       p.status === 'done'

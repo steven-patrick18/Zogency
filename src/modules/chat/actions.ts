@@ -9,9 +9,11 @@ import { notify } from '@/lib/notify'
 // Internal team chat. @mentions resolve to users by name and notify them.
 export async function postChatAction(formData: FormData) {
   const session = await requireSession()
-  const channel = String(formData.get('channel') ?? 'general').slice(0, 40)
+  const channel = String(formData.get('channel') ?? 'general').slice(0, 80)
   const body = String(formData.get('body') ?? '').trim()
   if (!body) return
+  // DM channels (dm:<idA>:<idB>) are private — only a participant may post.
+  if (channel.startsWith('dm:') && !channel.slice(3).split(':').includes(session.user.id)) return
   await withTenant(async () => {
     // Resolve @Name mentions against active users — match the full name first
     // (picker inserts it), then the first name as a fallback.
@@ -29,6 +31,13 @@ export async function postChatAction(formData: FormData) {
     for (const userId of mentioned) {
       if (userId !== session.user.id) {
         await notify(userId, 'chat.mention', { by: session.user.name, channel })
+      }
+    }
+    // Notify the DM recipient (unless they were already @mentioned).
+    if (channel.startsWith('dm:')) {
+      const other = channel.slice(3).split(':').find((id) => id !== session.user.id)
+      if (other && !mentioned.includes(other)) {
+        await notify(other, 'chat.dm', { by: session.user.name })
       }
     }
   })

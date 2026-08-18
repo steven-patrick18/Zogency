@@ -3,7 +3,9 @@ import { requirePermission, withTenant } from '@/lib/authz'
 import { prisma } from '@/lib/db/prisma'
 
 export default async function ClientsPage() {
-  await requirePermission('clients.view')
+  const session = await requirePermission('clients.view')
+  // Financials (invoiced totals) only for finance/manager roles.
+  const canSeeMoney = session.user.permissions.includes('invoices.view')
   const clients = await withTenant(() =>
     prisma.client.findMany({
       where: { archivedAt: null },
@@ -31,13 +33,13 @@ export default async function ClientsPage() {
               <th className="px-4 py-3">Primary contact</th>
               <th className="px-4 py-3">Onboarding</th>
               <th className="px-4 py-3">Projects</th>
-              <th className="px-4 py-3">Invoiced</th>
+              {canSeeMoney && <th className="px-4 py-3">Invoiced</th>}
               <th className="px-4 py-3">Status</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {clients.length === 0 && (
-              <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-400">No clients yet — win a deal.</td></tr>
+              <tr><td colSpan={canSeeMoney ? 6 : 5} className="px-4 py-10 text-center text-slate-400">No clients yet — win a deal.</td></tr>
             )}
             {clients.map((c) => {
               const done = c.onboardingItems.filter((i) => i.doneAt).length
@@ -52,7 +54,7 @@ export default async function ClientsPage() {
                   <td className="px-4 py-3 text-slate-600">{c.contacts[0]?.name ?? '—'}</td>
                   <td className="px-4 py-3 text-slate-600">{done}/{c.onboardingItems.length} done</td>
                   <td className="px-4 py-3 text-slate-600">{c.projects.length}</td>
-                  <td className="px-4 py-3 text-slate-600">₹{invoiced.toLocaleString('en-IN')}</td>
+                  {canSeeMoney && <td className="px-4 py-3 text-slate-600">₹{invoiced.toLocaleString('en-IN')}</td>}
                   <td className="px-4 py-3">
                     <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">{c.status}</span>
                   </td>

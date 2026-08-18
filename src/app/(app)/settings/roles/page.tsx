@@ -23,6 +23,8 @@ export default async function RolesPage() {
   const shownRoles = visibleRoles(roles, canVendor)
   const shownPerms = canVendor ? permissions : permissions.filter((p) => p.key !== 'vendor.manage')
   const granted = shownRoles.flatMap((r) => r.rolePermissions.map((rp) => `${r.id}:${rp.permissionId}`))
+  // Core admin permissions are locked (read-only) — grant the Admin role instead.
+  const lockedKeys = canVendor ? [] : ['settings.manage', 'users.manage', 'system.manage']
 
   return (
     <div>
@@ -34,6 +36,7 @@ export default async function RolesPage() {
         permissions={shownPerms.map((p) => ({ id: p.id, key: p.key, module: p.module }))}
         granted={granted}
         canManage={canManage}
+        lockedKeys={lockedKeys}
       />
     </div>
   )

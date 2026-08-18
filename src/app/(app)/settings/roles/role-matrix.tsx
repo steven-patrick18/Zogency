@@ -15,12 +15,15 @@ export function RoleMatrix({
   permissions,
   granted,
   canManage,
+  lockedKeys = [],
 }: {
   roles: Role[]
   permissions: Permission[]
   granted: string[] // "roleId:permissionId"
   canManage: boolean
+  lockedKeys?: string[] // permission keys that are read-only (core admin perms)
 }) {
+  const locked = new Set(lockedKeys)
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null)
@@ -65,12 +68,15 @@ export function RoleMatrix({
           <tbody className="divide-y divide-slate-100">
             {permissions.map((p) => (
               <tr key={p.id}>
-                <td className="sticky left-0 bg-white px-3 py-1.5 font-mono text-slate-700" title={p.module}>{p.key}</td>
+                <td className="sticky left-0 bg-white px-3 py-1.5 font-mono text-slate-700" title={locked.has(p.key) ? 'Core admin permission — assign the Admin role instead' : p.module}>
+                  {p.key}{locked.has(p.key) && <span className="ml-1 text-slate-400" title="Locked — assign the Admin role">🔒</span>}
+                </td>
                 {roles.map((r) => {
                   const on = grantedSet.has(`${r.id}:${p.id}`)
+                  const isLocked = locked.has(p.key)
                   return (
                     <td key={r.id} className="px-2 py-1.5 text-center">
-                      {canManage ? (
+                      {canManage && !isLocked ? (
                         <input
                           type="checkbox"
                           checked={on}

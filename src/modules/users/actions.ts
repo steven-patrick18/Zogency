@@ -73,6 +73,13 @@ export async function setRolePermissionAction(_p: RolePermState, formData: FormD
     if (permission.key === 'vendor.manage' && !canVendor) {
       return { error: 'Only a vendor operator can grant the vendor-console permission.' }
     }
+    // Structural admin permissions can't be sprinkled onto ordinary roles via the
+    // matrix — that would silently turn a whole team into admins. Assign the Admin
+    // role instead. (Vendor operators can still adjust on the master.)
+    const STRUCTURAL = new Set(['settings.manage', 'users.manage', 'system.manage'])
+    if (STRUCTURAL.has(permission.key) && !canVendor) {
+      return { error: `“${permission.key}” is a core admin permission — give someone the Admin role for full access instead of granting it here.` }
+    }
     if (permission.key === 'settings.manage' && !grant) {
       const holdsRole = await prisma.userRole.findFirst({ where: { userId: session.user.id, roleId } })
       if (holdsRole) return { error: 'You can’t remove Settings management from a role you hold — you’d lock yourself out.' }

@@ -4,7 +4,7 @@ import { useActionState } from 'react'
 import { createMeetingAction, type MeetingActionState } from '@/modules/meetings/actions'
 
 const field =
-  'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none'
+  'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none'
 const primaryBtn =
   'rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50'
 
