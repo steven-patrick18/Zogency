@@ -45,6 +45,47 @@ export async function createUser(formData: FormData) {
 
 export type RolePermState = { error?: string; success?: string }
 
+/** Create a custom role (BRB — manage roles per their team). Starts with no
+ * permissions; the admin then ticks what it can access in the matrix. */
+export async function createRoleAction(_p: RolePermState, formData: FormData): Promise<RolePermState> {
+  await requirePermission('settings.manage')
+  const parsed = z.string().trim().min(2, 'Role name must be at least 2 characters').max(40).safeParse(formData.get('name'))
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid name' }
+  const name = parsed.data
+  if (isInternalRole(name)) return { error: 'That name is reserved.' }
+  return withTenant(async () => {
+    const exists = await prisma.role.findFirst({ where: { name } })
+    if (exists) return { error: `A role named “${name}” already exists.` }
+    const role = await prisma.role.create({ data: scoped({ name, isSystem: false }) })
+    await audit('role.create', 'role', role.id, null, { name })
+    return { success: `Role “${name}” created — set its access in the matrix below.` }
+  })
+}
+
+/** Delete a role. Guards: never Admin; internal roles need vendor; can't delete
+ * a role that still has members assigned. */
+export async function deleteRoleAction(_p: RolePermState, formData: FormData): Promise<RolePermState> {
+  const session = await requirePermission('settings.manage')
+  const canVendor = session.user.permissions.includes('vendor.manage')
+  const roleId = z.string().uuid().parse(formData.get('roleId'))
+  return withTenant(async () => {
+    const role = await prisma.role.findUnique({
+      where: { id: roleId },
+      include: { _count: { select: { userRoles: true } } },
+    })
+    if (!role) return { error: 'Role not found.' }
+    if (role.name === 'Admin') return { error: 'The Admin role can’t be deleted.' }
+    if (isInternalRole(role.name) && !canVendor) return { error: 'That role is managed by the vendor console.' }
+    if (role._count.userRoles > 0) {
+      return { error: `Reassign the ${role._count.userRoles} member(s) on “${role.name}” before deleting it.` }
+    }
+    await prisma.rolePermission.deleteMany({ where: { roleId } })
+    await prisma.role.delete({ where: { id: roleId } })
+    await audit('role.delete', 'role', roleId, { name: role.name }, null)
+    return { success: `Role “${role.name}” deleted.` }
+  })
+}
+
 /**
  * Grant/revoke a single permission on a role (editable permission matrix).
  * Guards against privilege escalation and self-lockout:

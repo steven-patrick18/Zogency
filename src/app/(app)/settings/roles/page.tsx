@@ -2,6 +2,7 @@ import { requireSession, withTenant } from '@/lib/authz'
 import { prisma, prismaUnscoped } from '@/lib/db/prisma'
 import { visibleRoles } from '@/lib/roles'
 import { RoleMatrix } from './role-matrix'
+import { RoleManager } from './role-manager'
 
 export default async function RolesPage() {
   const session = await requireSession()
@@ -10,7 +11,7 @@ export default async function RolesPage() {
 
   const roles = await withTenant(() =>
     prisma.role.findMany({
-      include: { rolePermissions: true },
+      include: { rolePermissions: true, _count: { select: { userRoles: true } } },
       orderBy: { name: 'asc' },
     }),
   )
@@ -29,8 +30,13 @@ export default async function RolesPage() {
   return (
     <div>
       <p className="mb-3 text-sm text-slate-500">
-        What each role can do. {canManage ? 'Edit permissions below.' : 'Read-only (needs Settings management).'}
+        What each role can do. {canManage ? 'Create/delete roles and edit permissions below.' : 'Read-only (needs Settings management).'}
       </p>
+      {canManage && (
+        <RoleManager
+          roles={shownRoles.map((r) => ({ id: r.id, name: r.name, userCount: r._count.userRoles, deletable: r.name !== 'Admin' }))}
+        />
+      )}
       <RoleMatrix
         roles={shownRoles.map((r) => ({ id: r.id, name: r.name, isSystem: r.isSystem }))}
         permissions={shownPerms.map((p) => ({ id: p.id, key: p.key, module: p.module }))}
