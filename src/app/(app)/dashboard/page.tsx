@@ -12,7 +12,9 @@ export default async function DashboardPage() {
 
   if (isLeadership) {
     const tenant = await prismaUnscoped.tenant.findUnique({ where: { id: session.user.tenantId } })
-    return <CompanyDashboard tenantName={tenant?.name ?? 'Workspace'} />
+    // ₹ figures only for finance/leadership.
+    const canSeeMoney = perms.includes('reports.exec') || perms.includes('invoices.view')
+    return <CompanyDashboard tenantName={tenant?.name ?? 'Workspace'} canSeeMoney={canSeeMoney} />
   }
 
   return (

@@ -115,6 +115,67 @@ export async function hireCandidate(
 }
 
 /**
+ * Add an existing team member directly (no recruitment funnel) — creates their
+ * login + employee record + onboarding checklist + leave balances, and assigns
+ * the given roles. For onboarding a team that already exists (BRB).
+ */
+export async function createEmployeeDirect(input: {
+  name: string
+  email: string
+  phone?: string | null
+  departmentId: string | null
+  managerId: string | null
+  designation: string
+  employmentType: string
+  joinedOn: Date
+  tempPassword: string
+  roleIds: string[]
+}): Promise<Result & { employeeId?: string }> {
+  const email = input.email.toLowerCase()
+  const existing = await prisma.user.findFirst({ where: { email } })
+  if (existing) return { ok: false, error: 'A user with that email already exists.' }
+
+  const user = await prisma.user.create({
+    data: scoped({
+      name: input.name,
+      email,
+      phone: input.phone ?? null,
+      passwordHash: await bcrypt.hash(input.tempPassword, 12),
+    }),
+  })
+  if (input.roleIds.length > 0) {
+    await prisma.userRole.createMany({
+      data: input.roleIds.map((roleId) => ({ userId: user.id, roleId })),
+      skipDuplicates: true,
+    })
+  }
+  const employee = await prisma.employee.create({
+    data: scoped({
+      userId: user.id,
+      departmentId: input.departmentId,
+      managerId: input.managerId,
+      designation: input.designation,
+      employmentType: input.employmentType,
+      joinedOn: input.joinedOn,
+      probationEndsOn: new Date(input.joinedOn.getTime() + 90 * 86_400_000),
+    }),
+  })
+  for (const title of ONBOARDING_ITEMS) {
+    await prisma.employeeOnboardingItem.create({ data: scoped({ employeeId: employee.id, title }) })
+  }
+  const year = new Date().getFullYear()
+  for (const type of await prisma.leaveType.findMany()) {
+    const opening = type.accrualPerMonth > 0 ? 0 : type.annualQuota
+    await prisma.leaveBalance.create({
+      data: scoped({ employeeId: employee.id, typeId: type.id, year, available: opening, openingBalance: opening }),
+    })
+  }
+  await runLeaveAccrual()
+  await audit('employee.added_direct', 'employee', employee.id, null, { designation: input.designation })
+  return { ok: true, employeeId: employee.id }
+}
+
+/**
  * Attendance punch (FR-4.8): one row per employee per day, toggled in/out.
  * Punched-in = inAt set & outAt null. Toggling lets an employee punch back in
  * after a break — inAt keeps the day's FIRST punch-in, outAt tracks the LATEST

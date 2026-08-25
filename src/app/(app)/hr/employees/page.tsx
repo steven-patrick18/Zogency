@@ -1,7 +1,9 @@
 import Link from 'next/link'
 import { requirePermission, withTenant } from '@/lib/authz'
 import { prisma } from '@/lib/db/prisma'
+import { visibleRoles } from '@/lib/roles'
 import { ExitPanel } from './employee-panels'
+import { AddEmployeeForm } from './add-employee-form'
 
 const STATUS_STYLES: Record<string, string> = {
   active: 'bg-green-100 text-green-700',
@@ -12,22 +14,33 @@ const STATUS_STYLES: Record<string, string> = {
 export default async function EmployeesPage() {
   const session = await requirePermission('hr.view')
   const canManage = session.user.permissions.includes('hr.manage')
+  const canVendor = session.user.permissions.includes('vendor.manage')
 
-  const [employees, users, departments] = await withTenant(() =>
+  const [employees, users, departments, roles] = await withTenant(() =>
     Promise.all([
       prisma.employee.findMany({
         orderBy: { joinedOn: 'asc' },
         include: { onboardingItems: true, exit: true },
       }),
-      prisma.user.findMany({ select: { id: true, name: true } }),
+      prisma.user.findMany({ where: { status: 'active' }, select: { id: true, name: true } }),
       prisma.department.findMany({ orderBy: { sort: 'asc' } }),
+      prisma.role.findMany({ orderBy: { name: 'asc' }, select: { id: true, name: true } }),
     ]),
   )
   const userName = new Map(users.map((u) => [u.id, u.name]))
   const departmentName = new Map(departments.map((d) => [d.id, d.name]))
+  const assignableRoles = visibleRoles(roles, canVendor)
 
   return (
-    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+    <div>
+      {canManage && (
+        <AddEmployeeForm
+          departments={departments.map((d) => ({ id: d.id, name: d.name }))}
+          managers={users.map((u) => ({ id: u.id, name: u.name }))}
+          roles={assignableRoles.map((r) => ({ id: r.id, name: r.name }))}
+        />
+      )}
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
       <table className="w-full text-sm">
         <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
           <tr>
@@ -89,10 +102,11 @@ export default async function EmployeesPage() {
             )
           })}
           {employees.length === 0 && (
-            <tr><td colSpan={8} className="px-4 py-6 text-center text-slate-400">No employees yet — hire from Recruitment.</td></tr>
+            <tr><td colSpan={8} className="px-4 py-6 text-center text-slate-400">No employees yet — use “Add employee” above, or hire from Recruitment.</td></tr>
           )}
         </tbody>
       </table>
+      </div>
     </div>
   )
 }

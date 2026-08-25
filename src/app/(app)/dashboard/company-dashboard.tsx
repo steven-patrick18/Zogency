@@ -3,7 +3,7 @@
 import { withTenant } from '@/lib/authz'
 import { prisma } from '@/lib/db/prisma'
 
-export async function CompanyDashboard({ tenantName }: { tenantName: string }) {
+export async function CompanyDashboard({ tenantName, canSeeMoney }: { tenantName: string; canSeeMoney: boolean }) {
   const { leads, deals, users, calls, invoices } = await withTenant(async () => {
     const [leads, deals, users, calls, invoices] = await Promise.all([
       prisma.lead.findMany({ include: { source: true, status: true } }),
@@ -39,14 +39,15 @@ export async function CompanyDashboard({ tenantName }: { tenantName: string }) {
     revenue: wonDeals.filter((d) => d.ownerId === u.id).reduce((s, d) => s + Number(d.value ?? 0), 0),
   }))
 
+  // ₹ figures are visible only to finance/leadership (reports.exec or invoices.view).
   const stats = [
-    { label: 'Total leads', value: String(leads.length) },
-    { label: 'Lead → Won conversion', value: `${conversion}%` },
-    { label: 'Pipeline value', value: `₹${pipelineValue.toLocaleString('en-IN')}` },
-    { label: 'Revenue won', value: `₹${revenue.toLocaleString('en-IN')}` },
-    { label: 'SLA compliance', value: `${slaCompliance}%` },
-    { label: 'Outstanding invoices', value: `₹${outstanding.toLocaleString('en-IN')}` },
-  ]
+    { label: 'Total leads', value: String(leads.length), money: false },
+    { label: 'Lead → Won conversion', value: `${conversion}%`, money: false },
+    { label: 'Pipeline value', value: `₹${pipelineValue.toLocaleString('en-IN')}`, money: true },
+    { label: 'Revenue won', value: `₹${revenue.toLocaleString('en-IN')}`, money: true },
+    { label: 'SLA compliance', value: `${slaCompliance}%`, money: false },
+    { label: 'Outstanding invoices', value: `₹${outstanding.toLocaleString('en-IN')}`, money: true },
+  ].filter((s) => canSeeMoney || !s.money)
 
   return (
     <div className="max-w-5xl">
@@ -84,7 +85,7 @@ export async function CompanyDashboard({ tenantName }: { tenantName: string }) {
           <h2 className="font-semibold text-slate-900">Team performance</h2>
           <table className="mt-3 w-full text-sm">
             <thead className="text-left text-xs uppercase tracking-wide text-slate-400">
-              <tr><th className="py-1">Member</th><th>Leads</th><th>Calls</th><th>Revenue</th></tr>
+              <tr><th className="py-1">Member</th><th>Leads</th><th>Calls</th>{canSeeMoney && <th>Revenue</th>}</tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {byRep.map((r) => (
@@ -92,7 +93,7 @@ export async function CompanyDashboard({ tenantName }: { tenantName: string }) {
                   <td className="py-1.5 text-slate-800">{r.name}</td>
                   <td className="text-slate-600">{r.leads}</td>
                   <td className="text-slate-600">{r.calls}</td>
-                  <td className="text-slate-600">₹{r.revenue.toLocaleString('en-IN')}</td>
+                  {canSeeMoney && <td className="text-slate-600">₹{r.revenue.toLocaleString('en-IN')}</td>}
                 </tr>
               ))}
             </tbody>

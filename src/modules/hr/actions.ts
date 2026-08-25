@@ -5,9 +5,11 @@ import { z } from 'zod'
 import { audit } from '@/lib/audit'
 import { requirePermission, requireSession, withTenant } from '@/lib/authz'
 import { prisma, scoped } from '@/lib/db/prisma'
+import { isInternalRole } from '@/lib/roles'
 import {
   completeExit,
   confirmEmployment,
+  createEmployeeDirect,
   decideLeave,
   hireCandidate,
   moveCandidateStage,
@@ -27,6 +29,56 @@ import {
 export type HrActionState = { error?: string; success?: string }
 type S = HrActionState
 const uuid = z.string().uuid()
+
+const addEmployeeSchema = z.object({
+  name: z.string().min(1, 'Name required'),
+  email: z.string().email('Valid email required'),
+  phone: z.string().optional().or(z.literal('')),
+  designation: z.string().min(1, 'Designation required'),
+  departmentId: z.string().uuid().optional().or(z.literal('')),
+  managerId: z.string().uuid().optional().or(z.literal('')),
+  employmentType: z.enum(['permanent', 'contract', 'intern']).default('permanent'),
+  joinedOn: z.string().min(1, 'Joining date required'),
+})
+
+/** Add an existing team member directly (BRB — onboard current staff). */
+export async function addEmployeeAction(_p: S, formData: FormData): Promise<S> {
+  const session = await requirePermission('hr.manage')
+  const canVendor = session.user.permissions.includes('vendor.manage')
+  const parsed = addEmployeeSchema.safeParse(Object.fromEntries(formData))
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' }
+  const d = parsed.data
+  const roleIds = [...new Set(formData.getAll('roleIds').map(String).filter((v) => uuid.safeParse(v).success))]
+
+  const { randomBytes } = await import('node:crypto')
+  const tempPassword = `Zog-${randomBytes(4).toString('hex')}`
+
+  const result = await withTenant(async () => {
+    // Escalation guard: only vendor operators may assign internal roles.
+    if (roleIds.length > 0) {
+      const roles = await prisma.role.findMany({ where: { id: { in: roleIds } } })
+      if (roles.length !== roleIds.length) return { ok: false as const, error: 'Unknown role selected' }
+      if (!canVendor && roles.some((r) => isInternalRole(r.name))) {
+        return { ok: false as const, error: 'You can’t assign the Demo Admin / Vendor Owner roles.' }
+      }
+    }
+    return createEmployeeDirect({
+      name: d.name,
+      email: d.email,
+      phone: d.phone || null,
+      departmentId: d.departmentId || null,
+      managerId: d.managerId || null,
+      designation: d.designation,
+      employmentType: d.employmentType,
+      joinedOn: new Date(d.joinedOn),
+      tempPassword,
+      roleIds,
+    })
+  })
+  if (!result.ok) return { error: result.error }
+  revalidatePath('/hr/employees')
+  return { success: `${d.name} added. Temporary login — email: ${d.email.toLowerCase()} · password: ${tempPassword} (share it; they can change it in their profile).` }
+}
 
 export async function createRequisitionAction(_p: S, formData: FormData): Promise<S> {
   const session = await requirePermission('hr.manage')
