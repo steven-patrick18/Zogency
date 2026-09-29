@@ -17,6 +17,12 @@ export default async function IntegrationsPage() {
         after saving. Webhook URLs below go into the vendor&apos;s console. Go live whenever your
         account is ready (doc 11 Q5).
       </p>
+      <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+        Saving keys stores them — it does not call the provider, so &ldquo;keys saved&rdquo; is not proof the
+        credentials work. Confirm a lead source end to end by sending a test lead through its webhook URL.
+        These are lead-capture and analytics connectors: connecting a Google Ads or Meta <em>ad account</em> for
+        spend and CPL reporting is not supported yet.
+      </p>
       {categories.map((category) => (
         <section key={category}>
           <h2 className="mb-3 font-semibold text-slate-900">{category}</h2>
@@ -36,8 +42,11 @@ export default async function IntegrationsPage() {
                   <div className="flex items-center justify-between">
                     <h3 className="font-medium text-slate-900">{def.name}</h3>
                     {connection?.status === 'connected' && (
+                      // "Saved", not "connected": storing credentials does not
+                      // contact the provider, so a green "connected" badge was
+                      // claiming more than the app actually knows (BRB #5).
                       <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
-                        connected
+                        keys saved
                       </span>
                     )}
                   </div>

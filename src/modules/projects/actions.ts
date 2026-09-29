@@ -36,3 +36,50 @@ export async function createProjectAction(_p: ProjectActionState, formData: Form
   revalidatePath('/projects')
   return { success: 'Project created' }
 }
+
+const updateSchema = schema.extend({
+  projectId: z.string().uuid(),
+  status: z.enum(['active', 'paused', 'completed']),
+}).omit({ clientId: true })
+
+/**
+ * Edit an existing project (BRB issue #4, second half): a one-off engagement
+ * that the client decides to retain becomes a retainer here — the type, the
+ * dates and the status are all editable instead of frozen at creation.
+ * The client is deliberately not reassignable: that would silently move
+ * delivery history, invoices and tasks between accounts.
+ */
+export async function updateProjectAction(_p: ProjectActionState, formData: FormData): Promise<ProjectActionState> {
+  await requirePermission('clients.edit')
+  const parsed = updateSchema.safeParse(Object.fromEntries(formData))
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' }
+  const d = parsed.data
+
+  try {
+    await withTenant(async () => {
+      const before = await prisma.project.findUniqueOrThrow({ where: { id: d.projectId } })
+      await prisma.project.update({
+        where: { id: d.projectId },
+        data: {
+          name: d.name,
+          type: d.type,
+          status: d.status,
+          startOn: d.startOn ? new Date(d.startOn) : null,
+          endOn: d.endOn ? new Date(d.endOn) : null,
+        },
+      })
+      await audit(
+        'project.update',
+        'project',
+        d.projectId,
+        { name: before.name, type: before.type, status: before.status, startOn: before.startOn, endOn: before.endOn },
+        { name: d.name, type: d.type, status: d.status, startOn: d.startOn || null, endOn: d.endOn || null },
+      )
+    })
+  } catch {
+    return { error: 'Could not save the project' }
+  }
+  revalidatePath('/projects')
+  revalidatePath(`/projects/${d.projectId}`)
+  return { success: 'Project updated' }
+}

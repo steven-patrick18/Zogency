@@ -2,8 +2,10 @@
 
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
+import { audit } from '@/lib/audit'
 import { requirePermission, withTenant } from '@/lib/authz'
-import { createLead } from './service'
+import { prisma } from '@/lib/db/prisma'
+import { createLead, normalizePhone } from './service'
 import { parseCsv } from './csv'
 
 const manualLeadSchema = z.object({
@@ -39,6 +41,66 @@ export async function createLeadAction(_prev: LeadFormState, formData: FormData)
   if (result.outcome === 'rejected') return { error: result.reason }
   if (result.outcome === 'merged') return { success: 'Matched an existing lead — details merged, no duplicate created.' }
   return { success: `Lead "${result.lead.name}" created and assigned.` }
+}
+
+// Leads were create-only: a typo at intake could never be corrected, and a
+// prospect whose requirement changed (one-off → retainer) could not be
+// restated (BRB issue #4).
+const updateLeadSchema = z.object({
+  leadId: z.string().uuid(),
+  name: z.string().min(1, 'Name required').max(150),
+  company: z.string().max(150).optional().or(z.literal('')),
+  city: z.string().max(80).optional().or(z.literal('')),
+  industry: z.string().max(80).optional().or(z.literal('')),
+  // Contact fields are optional in the payload: a user without
+  // leads.view_contact never sees them, so their form does not submit them.
+  phone: z.string().max(20).optional(),
+  email: z.string().email('Enter a valid email').optional().or(z.literal('')),
+})
+
+export async function updateLeadAction(_prev: LeadFormState, formData: FormData): Promise<LeadFormState> {
+  const session = await requirePermission('leads.edit')
+  const parsed = updateLeadSchema.safeParse(Object.fromEntries(formData))
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' }
+  const d = parsed.data
+  // Masking rule (leads.view_contact): someone who cannot see the real phone or
+  // email must not be able to overwrite them either — ignore those fields.
+  const mayEditContact = session.user.permissions.includes('leads.view_contact')
+
+  try {
+    await withTenant(async () => {
+      const before = await prisma.lead.findUniqueOrThrow({ where: { id: d.leadId } })
+      const phone = mayEditContact ? normalizePhone(d.phone) : before.phone
+      const email = mayEditContact ? (d.email ? d.email.toLowerCase() : null) : before.email
+      await prisma.lead.update({
+        where: { id: d.leadId },
+        data: {
+          name: d.name,
+          company: d.company || null,
+          city: d.city || null,
+          industry: d.industry || null,
+          phone,
+          email,
+        },
+      })
+      await audit(
+        'lead.update',
+        'lead',
+        d.leadId,
+        { name: before.name, company: before.company, city: before.city, industry: before.industry },
+        { name: d.name, company: d.company || null, city: d.city || null, industry: d.industry || null },
+      )
+    })
+  } catch (e) {
+    // The tenant-scoped unique indexes on phone/email are the likely failure.
+    const msg = e instanceof Error && e.message.includes('Unique constraint')
+      ? 'Another lead already has that phone or email.'
+      : 'Could not save the lead'
+    return { error: msg }
+  }
+  revalidatePath('/leads')
+  revalidatePath(`/leads/${d.leadId}`)
+  return { success: 'Lead updated' }
 }
 
 export type ImportState = {

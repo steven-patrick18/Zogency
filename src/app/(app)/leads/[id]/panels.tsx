@@ -1,7 +1,8 @@
 'use client'
 
-import { useActionState } from 'react'
+import { useActionState, useState } from 'react'
 import { logCallAction, type CallFormState } from '@/modules/calls/actions'
+import { updateLeadAction, type LeadFormState } from '@/modules/leads/actions'
 import { revealContactAction } from '@/modules/leads/reveal-action'
 import { reassignLeadAction, saveBantAction, type ActionState } from '@/modules/pipeline/actions'
 
@@ -173,6 +174,100 @@ export function ReassignForm({
       >
         {pending ? 'Reassigning…' : 'Reassign'}
       </button>
+    </form>
+  )
+}
+
+/**
+ * Correct a lead's details after intake (BRB issue #4). Phone and email only
+ * render for someone who may see them unmasked — the server ignores those
+ * fields for everyone else, so a rep can never blind-overwrite a contact.
+ */
+export function EditLeadForm({
+  lead,
+  canEditContact,
+}: {
+  lead: {
+    id: string
+    name: string
+    company: string | null
+    city: string | null
+    industry: string | null
+    phone: string | null
+    email: string | null
+  }
+  canEditContact: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const [state, formAction, pending] = useActionState<LeadFormState, FormData>(updateLeadAction, {})
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+      >
+        Edit details
+      </button>
+    )
+  }
+
+  return (
+    <form action={formAction} className="mt-4 space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <input type="hidden" name="leadId" value={lead.id} />
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-500" htmlFor="lead-name">Name</label>
+          <input id="lead-name" name="name" defaultValue={lead.name} required className={field} />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-500" htmlFor="lead-company">Company</label>
+          <input id="lead-company" name="company" defaultValue={lead.company ?? ''} className={field} />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-500" htmlFor="lead-city">City</label>
+          <input id="lead-city" name="city" defaultValue={lead.city ?? ''} className={field} />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-500" htmlFor="lead-industry">Industry</label>
+          <input id="lead-industry" name="industry" defaultValue={lead.industry ?? ''} className={field} />
+        </div>
+        {canEditContact && (
+          <>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-500" htmlFor="lead-phone">Phone</label>
+              <input id="lead-phone" name="phone" defaultValue={lead.phone ?? ''} className={field} />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-500" htmlFor="lead-email">Email</label>
+              <input id="lead-email" type="email" name="email" defaultValue={lead.email ?? ''} className={field} />
+            </div>
+          </>
+        )}
+      </div>
+      {!canEditContact && (
+        <p className="text-xs text-slate-500">Phone and email are masked for your role and stay unchanged.</p>
+      )}
+
+      {state.error && <p className="text-sm text-red-600">{state.error}</p>}
+      {state.success && <p className="text-sm text-green-600">{state.success}</p>}
+
+      <div className="flex gap-2">
+        <button
+          type="submit"
+          disabled={pending}
+          className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-60"
+        >
+          {pending ? 'Saving…' : 'Save changes'}
+        </button>
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+        >
+          Cancel
+        </button>
+      </div>
     </form>
   )
 }

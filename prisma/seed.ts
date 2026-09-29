@@ -28,7 +28,8 @@ const PERMISSIONS: Array<[key: string, module: string, description: string]> = [
   ['campaigns.edit', 'campaigns', 'Edit briefs, plans, creative'],
   ['campaigns.approve', 'campaigns', 'Internal marketing approvals'],
   ['tasks.view', 'tasks', 'View task boards'],
-  ['tasks.edit', 'tasks', 'Create/edit/complete tasks'],
+  ['tasks.edit', 'tasks', 'Create tasks and work on your own (assigned or created by you)'],
+  ['tasks.manage', 'tasks', 'Edit, reassign and complete ANY task (not just your own)'],
   ['hr.view', 'hr', 'View HR records (non-sensitive)'],
   ['hr.manage', 'hr', 'Manage recruitment, attendance, leave, reviews'],
   ['hr.view_salaries', 'hr', 'View compensation data'],
@@ -68,7 +69,7 @@ const ROLES: Record<string, string[] | 'ALL_BUT_VENDOR'> = {
   'Pre-Sales': ['leads.view', 'deals.view', 'deals.edit'],
   'Marketing Manager': [
     'campaigns.view', 'campaigns.edit', 'campaigns.approve', 'tasks.view',
-    'tasks.edit', 'clients.view', 'reports.view', 'approvals.act',
+    'tasks.edit', 'tasks.manage', 'clients.view', 'reports.view', 'approvals.act',
   ],
   'Account Servicing': ['campaigns.view', 'campaigns.edit', 'clients.view', 'clients.edit', 'tasks.view'],
   Creative: ['campaigns.view', 'campaigns.edit', 'tasks.view', 'tasks.edit'],

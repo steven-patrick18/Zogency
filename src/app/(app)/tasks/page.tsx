@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { requirePermission, withTenant } from '@/lib/authz'
 import { prisma } from '@/lib/db/prisma'
 import { changeTaskStatusAction } from '@/modules/tasks/actions'
+import { canEditTask } from '@/modules/tasks/task-scope'
 import { NewTaskForm } from './new-task-form'
 
 const COLUMNS: Array<{ key: 'todo' | 'in_progress' | 'review' | 'done' | 'blocked'; label: string }> = [
@@ -16,6 +17,9 @@ export default async function TasksPage() {
   const session = await requirePermission('tasks.view')
   const canEdit = session.user.permissions.includes('tasks.edit')
   const canApprove = session.user.permissions.includes('approvals.act')
+  // The whole board stays visible (the team coordinates from it), but the
+  // status controls only render on tasks this person is allowed to touch.
+  const actor = { id: session.user.id, permissions: session.user.permissions }
   const [tasks, departments, users, projects, settings] = await withTenant(() =>
     Promise.all([
       prisma.task.findMany({ include: { project: { include: { client: true } }, assignees: true, _count: { select: { attachments: true } } }, orderBy: { createdAt: 'desc' } }),
@@ -81,7 +85,7 @@ export default async function TasksPage() {
                       {t.deadline ? ` · due ${t.deadline.toDateString()}` : ''}
                       {` · ${t.priority}`}
                     </p>
-                    {canEdit && (
+                    {canEdit && canEditTask(actor, t) && (
                       <form action={changeTaskStatusAction} className="mt-2 flex flex-wrap gap-1">
                         <input type="hidden" name="taskId" value={t.id} />
                         {allowedTargets(t.status).map((c) => (

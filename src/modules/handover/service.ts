@@ -90,7 +90,7 @@ export async function executeHandoverChain(dealId: string): Promise<{ clientId: 
     const dept = departments.find((dep) =>
       d.serviceName.toLowerCase().includes(dep.name.toLowerCase()),
     )
-    await prisma.task.create({
+    const task = await prisma.task.create({
       data: scoped({
         projectId: project.id,
         departmentId: dept?.id ?? null,
@@ -101,6 +101,15 @@ export async function executeHandoverChain(dealId: string): Promise<{ clientId: 
         priority: 'medium',
       }),
     })
+    // The board and the ownership rules read task_assignees, not the legacy
+    // assignee_id column — without this row the task shows as "Unassigned" and
+    // its owner cannot edit it.
+    if (client.ownerId) {
+      await prisma.taskAssignee.createMany({
+        data: [scoped({ taskId: task.id, userId: client.ownerId })],
+        skipDuplicates: true,
+      })
+    }
   }
 
   // FR-2.19 — order to Finance: draft invoice for the deal value.

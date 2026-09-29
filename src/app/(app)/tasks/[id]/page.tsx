@@ -3,7 +3,9 @@ import { notFound } from 'next/navigation'
 import { requirePermission, withTenant } from '@/lib/authz'
 import { prisma } from '@/lib/db/prisma'
 import { changeTaskStatusAction } from '@/modules/tasks/actions'
+import { canEditTask, TASK_EDIT_DENIED } from '@/modules/tasks/task-scope'
 import { AttachmentForm } from './attachment-form'
+import { EditTaskForm } from './edit-task-form'
 
 const COLUMNS = [
   { key: 'todo', label: 'To do' },
@@ -38,15 +40,20 @@ export default async function TaskDetailPage({ params }: { params: Promise<{ id:
       },
     })
     if (!task) return null
-    const [users, departments, settings] = await Promise.all([
+    const [users, departments, projects, settings] = await Promise.all([
       prisma.user.findMany({ select: { id: true, name: true } }),
       prisma.department.findMany({ select: { id: true, name: true } }),
+      prisma.project.findMany({ where: { status: 'active' }, select: { id: true, name: true } }),
       prisma.tenantSettings.findFirst({ select: { requireTaskApproval: true } }),
     ])
-    return { task, users, departments, gate: settings?.requireTaskApproval ?? false }
+    return { task, users, departments, projects, gate: settings?.requireTaskApproval ?? false }
   })
   if (!data) notFound()
-  const { task, users, departments, gate } = data
+  const { task, users, departments, projects, gate } = data
+  // Scoped edit rights (BRB): the board stays visible to everyone, but only the
+  // task's own people — or a tasks.manage holder — can change it.
+  const canEditThis =
+    canEdit && canEditTask({ id: session.user.id, permissions: session.user.permissions }, task)
   const userName = new Map(users.map((u) => [u.id, u.name]))
   const deptName = new Map(departments.map((d) => [d.id, d.name]))
 
@@ -89,8 +96,33 @@ export default async function TaskDetailPage({ params }: { params: Promise<{ id:
         </div>
       </div>
 
-      {/* Status controls */}
-      {canEdit && (
+      {/* Edit + status controls — only for this task's own people */}
+      {canEditThis && (
+        <div className="mt-4">
+          <EditTaskForm
+            task={{
+              id: task.id,
+              title: task.title,
+              description: task.description,
+              tags: task.tags,
+              projectId: task.projectId,
+              departmentId: task.departmentId,
+              deadline: task.deadline ? task.deadline.toISOString().slice(0, 10) : null,
+              priority: task.priority,
+            }}
+            departments={departments}
+            projects={projects}
+          />
+        </div>
+      )}
+
+      {canEdit && !canEditThis && (
+        <p className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+          {TASK_EDIT_DENIED}
+        </p>
+      )}
+
+      {canEditThis && (
         <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
           <p className="mb-2 text-xs font-medium text-slate-500">Move to</p>
           <form action={changeTaskStatusAction} className="flex flex-wrap gap-2">
@@ -121,7 +153,7 @@ export default async function TaskDetailPage({ params }: { params: Promise<{ id:
           ))}
           {task.attachments.length === 0 && <li className="py-2 text-sm text-slate-400">No files attached.</li>}
         </ul>
-        {canEdit && <div className="mt-3 border-t border-slate-100 pt-3"><AttachmentForm taskId={task.id} /></div>}
+        {canEditThis && <div className="mt-3 border-t border-slate-100 pt-3"><AttachmentForm taskId={task.id} /></div>}
       </div>
 
       {/* History */}

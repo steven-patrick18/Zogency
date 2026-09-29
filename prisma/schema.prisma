@@ -676,6 +676,7 @@ model Task {
   projectId        String?      @map("project_id") @db.Uuid
   departmentId     String?      @map("department_id") @db.Uuid
   assigneeId       String?      @map("assignee_id") @db.Uuid
+  createdById      String?      @map("created_by_id") @db.Uuid
   sowDeliverableId String?      @map("sow_deliverable_id") @db.Uuid
   title            String
   description      String?

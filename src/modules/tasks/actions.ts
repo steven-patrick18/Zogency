@@ -6,10 +6,22 @@ import { audit } from '@/lib/audit'
 import { requirePermission, requireSession, withTenant } from '@/lib/authz'
 import { prisma, scoped } from '@/lib/db/prisma'
 import { notify } from '@/lib/notify'
+import {
+  canEditTask,
+  canReassignTask,
+  TASK_EDIT_DENIED,
+  TASK_REASSIGN_DENIED,
+  type TaskActor,
+} from './task-scope'
 
 export type TaskActionState = { error?: string; success?: string }
 
 const TASK_STATUSES = ['todo', 'in_progress', 'review', 'done', 'blocked'] as const
+
+/** Session → the shape the (pure, testable) ownership rules expect. */
+function actorOf(session: { user: { id: string; permissions: string[] } }): TaskActor {
+  return { id: session.user.id, permissions: session.user.permissions }
+}
 
 export async function changeTaskStatusAction(formData: FormData) {
   const session = await requirePermission('tasks.edit')
@@ -18,6 +30,7 @@ export async function changeTaskStatusAction(formData: FormData) {
 
   await withTenant(async () => {
     const task = await prisma.task.findUniqueOrThrow({ where: { id: taskId }, include: { assignees: true } })
+    if (!canEditTask(actorOf(session), task)) throw new Error(TASK_EDIT_DENIED)
     if (task.status === to) return
     // Completion workflow gate (BRB): when enabled, a task must pass through
     // Review, and only an approver (approvals.act) can mark it Done.
@@ -112,6 +125,7 @@ export async function createTaskAction(_p: TaskActionState, formData: FormData):
         projectId: d.projectId || null,
         departmentId: d.departmentId || null,
         assigneeId: assigneeIds[0], // primary assignee (legacy index)
+        createdById: session.user.id,
         deadline: d.deadline ? new Date(d.deadline) : null,
         priority: d.priority,
       }),
@@ -132,6 +146,57 @@ export async function createTaskAction(_p: TaskActionState, formData: FormData):
   return { success: 'Task created' }
 }
 
+const updateTaskSchema = createTaskSchema.extend({
+  taskId: z.string().uuid(),
+})
+
+/**
+ * Edit a task's fields after creation (BRB issue #2 — tasks were write-once).
+ * Status lives in changeTaskStatusAction and assignees in setTaskAssigneesAction
+ * so each keeps its own history/notification behaviour.
+ */
+export async function updateTaskAction(_p: TaskActionState, formData: FormData): Promise<TaskActionState> {
+  const session = await requirePermission('tasks.edit')
+  const parsed = updateTaskSchema.safeParse(Object.fromEntries(formData))
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' }
+  const d = parsed.data
+  const tags = [...new Set((d.tags ?? '').split(',').map((t) => t.trim()).filter(Boolean))].slice(0, 10)
+
+  try {
+    await withTenant(async () => {
+      const before = await prisma.task.findUniqueOrThrow({
+        where: { id: d.taskId },
+        include: { assignees: true },
+      })
+      if (!canEditTask(actorOf(session), before)) throw new Error(TASK_EDIT_DENIED)
+      await prisma.task.update({
+        where: { id: d.taskId },
+        data: {
+          title: d.title,
+          description: d.description || null,
+          tags,
+          projectId: d.projectId || null,
+          departmentId: d.departmentId || null,
+          deadline: d.deadline ? new Date(d.deadline) : null,
+          priority: d.priority,
+        },
+      })
+      await audit(
+        'task.update',
+        'task',
+        d.taskId,
+        { title: before.title, priority: before.priority, deadline: before.deadline, tags: before.tags },
+        { title: d.title, priority: d.priority, deadline: d.deadline || null, tags },
+      )
+    })
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : 'Could not save the task' }
+  }
+  revalidatePath('/tasks')
+  revalidatePath(`/tasks/${d.taskId}`)
+  return { success: 'Task updated' }
+}
+
 /** Replace a task's assignee set (BRB — reassign to one or many). */
 export async function setTaskAssigneesAction(formData: FormData): Promise<void> {
   const session = await requirePermission('tasks.edit')
@@ -139,6 +204,7 @@ export async function setTaskAssigneesAction(formData: FormData): Promise<void> 
   const assigneeIds = readAssigneeIds(formData, session.user.id)
   await withTenant(async () => {
     const before = await prisma.task.findUniqueOrThrow({ where: { id: taskId }, include: { assignees: true } })
+    if (!canReassignTask(actorOf(session), before)) throw new Error(TASK_REASSIGN_DENIED)
     const prev = new Set(before.assignees.map((a) => a.userId))
     await prisma.taskAssignee.deleteMany({ where: { taskId } })
     await prisma.taskAssignee.createMany({
@@ -161,6 +227,8 @@ export async function addTaskAttachmentsAction(formData: FormData): Promise<void
   const attachments = await readAttachments(formData)
   if (attachments.length === 0) return
   await withTenant(async () => {
+    const task = await prisma.task.findUniqueOrThrow({ where: { id: taskId }, include: { assignees: true } })
+    if (!canEditTask(actorOf(session), task)) throw new Error(TASK_EDIT_DENIED)
     await prisma.taskAttachment.createMany({
       data: attachments.map((a) => scoped({ taskId, uploadedBy: session.user.id, ...a })),
     })

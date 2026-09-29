@@ -4,13 +4,14 @@ import { prisma } from '@/lib/db/prisma'
 import { getLeadTimeline } from '@/modules/pipeline/service'
 import { StatusChangeModal } from '@/modules/pipeline/status-modal'
 import { maskEmail, maskPhone } from '@/lib/mask'
-import { BantForm, ContactReveal, LogCallForm, ReassignForm } from './panels'
+import { BantForm, ContactReveal, EditLeadForm, LogCallForm, ReassignForm } from './panels'
 import { LeadMeetingForm } from './lead-meeting-form'
 
 export default async function LeadDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const session = await requirePermission('leads.view')
   const canSeeContact = session.user.permissions.includes('leads.view_contact')
   const canReveal = session.user.permissions.includes('calls.log')
+  const canEditLead = session.user.permissions.includes('leads.edit')
   const canViewAll = session.user.permissions.includes('leads.reassign')
   const { id } = await params
 
@@ -92,6 +93,22 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
             <p className="mt-3 rounded-lg bg-slate-100 px-3 py-2 text-xs text-slate-600">
               Junk reason: {lead.junkReason}
             </p>
+          )}
+          {canEditLead && (
+            <div className="mt-4">
+              <EditLeadForm
+                lead={{
+                  id: lead.id,
+                  name: lead.name,
+                  company: lead.company,
+                  city: lead.city,
+                  industry: lead.industry,
+                  phone: lead.phone,
+                  email: lead.email,
+                }}
+                canEditContact={canSeeContact}
+              />
+            </div>
           )}
         </div>
 

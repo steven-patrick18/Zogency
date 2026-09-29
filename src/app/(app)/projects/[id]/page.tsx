@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { requirePermission, withTenant } from '@/lib/authz'
 import { prisma } from '@/lib/db/prisma'
+import { EditProjectForm } from './edit-project-form'
 
 const COLUMNS: Array<{ key: string; label: string }> = [
   { key: 'todo', label: 'To do' },
@@ -12,7 +13,8 @@ const COLUMNS: Array<{ key: string; label: string }> = [
 ]
 
 export default async function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  await requirePermission('tasks.view')
+  const session = await requirePermission('tasks.view')
+  const canManage = session.user.permissions.includes('clients.edit')
   const { id } = await params
 
   const data = await withTenant(async () => {
@@ -46,6 +48,19 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           Task board →
         </Link>
       </div>
+
+      {canManage && (
+        <EditProjectForm
+          project={{
+            id: project.id,
+            name: project.name,
+            type: project.type,
+            status: project.status,
+            startOn: project.startOn ? project.startOn.toISOString().slice(0, 10) : null,
+            endOn: project.endOn ? project.endOn.toISOString().slice(0, 10) : null,
+          }}
+        />
+      )}
 
       <div className="mt-6 flex gap-3 overflow-x-auto pb-4">
         {COLUMNS.map((col) => {

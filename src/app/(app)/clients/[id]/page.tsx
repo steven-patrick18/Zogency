@@ -3,13 +3,15 @@ import { notFound } from 'next/navigation'
 import { requirePermission, withTenant } from '@/lib/authz'
 import { prisma } from '@/lib/db/prisma'
 import { toggleOnboardingItemAction } from '@/modules/tasks/actions'
+import { EditClientForm, EditContactForm } from './edit-forms'
 import { InvitePortalButton } from './invite-button'
 
 export default async function ClientDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  await requirePermission('clients.view')
+  const session = await requirePermission('clients.view')
+  const canEdit = session.user.permissions.includes('clients.edit')
   const { id } = await params
-  const client = await withTenant(() =>
-    prisma.client.findUnique({
+  const data = await withTenant(async () => {
+    const client = await prisma.client.findUnique({
       where: { id },
       include: {
         contacts: true,
@@ -18,9 +20,17 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
         projects: { include: { tasks: true } },
         invoices: { orderBy: { createdAt: 'desc' } },
       },
-    }),
-  )
-  if (!client) notFound()
+    })
+    if (!client) return null
+    const owners = await prisma.user.findMany({
+      where: { status: 'active' },
+      select: { id: true, name: true },
+      orderBy: { name: 'asc' },
+    })
+    return { client, owners }
+  })
+  if (!data) notFound()
+  const { client, owners } = data
   const handover = client.handovers[0]
 
   return (
@@ -29,10 +39,27 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
         <h1 className="text-2xl font-bold text-slate-900">{client.name}</h1>
         <p className="text-sm text-slate-500">
           Client since {client.createdAt.toDateString()}
+          {' · '}<span className="capitalize">{client.status}</span>
+          {client.gstin && <> · GSTIN {client.gstin}</>}
           {client.originLeadId && (
             <> · <Link href={`/leads/${client.originLeadId}`} className="text-indigo-600 hover:underline">origin lead</Link></>
           )}
         </p>
+        {canEdit && (
+          <div className="mt-3">
+            <EditClientForm
+              client={{
+                id: client.id,
+                name: client.name,
+                legalName: client.legalName,
+                gstin: client.gstin,
+                status: client.status,
+                ownerId: client.ownerId,
+              }}
+              owners={owners}
+            />
+          </div>
+        )}
       </div>
 
       {handover && (
@@ -79,8 +106,14 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
               {client.contacts.map((c) => (
                 <li key={c.id}>
                   <p className="font-medium text-slate-900">{c.name} {c.isPrimary && <span className="text-xs text-indigo-600">primary</span>}</p>
-                  <p className="text-xs text-slate-500">{[c.phone, c.email].filter(Boolean).join(' · ')}</p>
+                  <p className="text-xs text-slate-500">{[c.role, c.phone, c.email].filter(Boolean).join(' · ')}</p>
                   {c.email && <InvitePortalButton contactId={c.id} />}
+                  {canEdit && (
+                    <EditContactForm
+                      contact={{ id: c.id, name: c.name, role: c.role, phone: c.phone, email: c.email, isPrimary: c.isPrimary }}
+                      clientId={client.id}
+                    />
+                  )}
                 </li>
               ))}
             </ul>
