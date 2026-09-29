@@ -1681,6 +1681,19 @@ model TicketMessage {
 }
 
 // Internal team chat with @mentions (append-only).
+/// Per-user read cursor for a chat channel — drives the unread badges on the
+/// conversation list. One row per (user, channel); written when they open it.
+model ChatRead {
+  tenantId   String   @map("tenant_id") @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  channel    String
+  lastReadAt DateTime @default(now()) @map("last_read_at")
+
+  @@id([userId, channel])
+  @@index([tenantId, userId])
+  @@map("chat_reads")
+}
+
 model ChatMessage {
   id         String   @id @default(uuid(7)) @db.Uuid
   tenantId   String   @map("tenant_id") @db.Uuid

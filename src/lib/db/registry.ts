@@ -94,6 +94,7 @@ export const TENANT_SCOPED_MODELS = new Set([
   'SupportTicket',
   'TicketMessage',
   'ChatMessage',
+  'ChatRead',
   'ContentItem',
   'EmailCampaign',
   'EmailCampaignRecipient',
