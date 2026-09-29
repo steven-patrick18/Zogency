@@ -1,12 +1,6 @@
 import { requireSession, withTenant } from '@/lib/authz'
 import { prisma } from '@/lib/db/prisma'
-import {
-  getConversations,
-  getMessages,
-  isParticipant,
-  markRead,
-  CHANNELS,
-} from '@/modules/chat/service'
+import { canAccessChannel, getConversations, getMessages, markRead } from '@/modules/chat/service'
 import { ChatWorkspace } from './chat-workspace'
 
 export default async function ChatPage({
@@ -24,9 +18,9 @@ export default async function ChatPage({
       select: { id: true, name: true, avatar: true },
       orderBy: { name: 'asc' },
     })
-    // Fall back to #general for an unknown channel or a DM this user is not in.
-    const known = (CHANNELS as readonly string[]).includes(raw) || raw.startsWith('dm:')
-    const channel = known && isParticipant(raw, me) ? raw : 'general'
+    // Fall back to #general for an unknown channel, or one this user may not
+    // read (a DM they are not in, a group they are not a member of).
+    const channel = (await canAccessChannel(raw, me)) ? raw : 'general'
 
     const byId = new Map(users.map((u) => [u.id, u]))
     const messages = await getMessages(channel, me, byId)

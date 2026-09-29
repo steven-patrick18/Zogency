@@ -3,7 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireSession, withTenant } from '@/lib/authz'
 import { prisma } from '@/lib/db/prisma'
-import { getConversations, getMessages, isParticipant, markRead } from '@/modules/chat/service'
+import { canAccessChannel, getConversations, getMessages, markRead } from '@/modules/chat/service'
 
 export async function POST(req: NextRequest) {
   const session = await requireSession()
@@ -17,15 +17,14 @@ export async function POST(req: NextRequest) {
   }
 
   const channel = String(body.channel ?? 'general').slice(0, 80)
-  // A DM is private: never serve one to a non-participant, even if they guess
-  // the channel id.
-  if (!isParticipant(channel, me)) {
-    return NextResponse.json({ error: 'not a participant' }, { status: 403 })
-  }
   const after = body.after ? new Date(body.after) : undefined
   const validAfter = after && !Number.isNaN(after.getTime()) ? after : undefined
 
   const data = await withTenant(async () => {
+    // Private conversations are never served to an outsider, even if they
+    // guess the channel id. Group membership lives in the DB, so this is
+    // checked inside tenant context.
+    if (!(await canAccessChannel(channel, me))) return null
     const users = await prisma.user.findMany({
       where: { status: 'active' },
       select: { id: true, name: true, avatar: true },
@@ -39,5 +38,6 @@ export async function POST(req: NextRequest) {
     return { messages, conversations }
   })
 
+  if (!data) return NextResponse.json({ error: 'not a participant' }, { status: 403 })
   return NextResponse.json(data)
 }

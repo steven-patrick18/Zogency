@@ -2,13 +2,18 @@
 
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { Avatar } from '@/components/avatar'
-import { postChatAction } from '@/modules/chat/actions'
+import { createChatGroupAction, postChatAction } from '@/modules/chat/actions'
 import type { ChatMessageView, ConversationView } from '@/modules/chat/service'
 
 const POLL_MS = 4000
 
 function dayKey(iso: string): string {
   return new Date(iso).toDateString()
+}
+
+/** Mirrors the server's channel id for a pair of users: dm:<idA>:<idB> sorted. */
+function dmChannelFor(a: string, b: string): string {
+  return 'dm:' + [a, b].sort().join(':')
 }
 
 /** "Today" / "Yesterday" / "12 Aug 2026" — the WhatsApp date divider. */
@@ -72,6 +77,13 @@ export function ChatWorkspace({
   const [value, setValue] = useState('')
   const [menu, setMenu] = useState<{ query: string; start: number } | null>(null)
   const [sending, setSending] = useState(false)
+  const [search, setSearch] = useState('')
+  // "New chat" reveals every teammate, including those you've never messaged —
+  // the rail itself only lists conversations that actually have history.
+  const [picking, setPicking] = useState(false)
+  // Group builder: null when closed, otherwise the in-progress name + members.
+  const [group, setGroup] = useState<{ name: string; members: string[]; error?: string } | null>(null)
+  const [creating, setCreating] = useState(false)
 
   const scrollerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -80,6 +92,18 @@ export function ChatWorkspace({
   const atBottomRef = useRef(true)
 
   const active = conversations.find((c) => c.channel === channel)
+
+  const q = search.trim().toLowerCase()
+  // Channels always show; a DM shows once it has history, when it is the one
+  // you are reading, or when you are searching for it by name.
+  const visible = conversations.filter((c) => {
+    if (q && !c.label.toLowerCase().includes(q)) return false
+    if (c.kind !== 'dm') return true // channels and groups always listed
+    return c.lastAt !== null || c.channel === channel || q.length > 0
+  })
+  const people = users
+    .filter((u) => u.id !== me)
+    .filter((u) => u.name.toLowerCase().includes(q))
 
   const scrollToBottom = useCallback((smooth = false) => {
     const el = scrollerRef.current
@@ -146,6 +170,23 @@ export function ChatWorkspace({
     void poll({ reset: true, target: next })
   }
 
+  async function createGroup() {
+    if (!group || creating) return
+    setCreating(true)
+    const fd = new FormData()
+    fd.set('name', group.name)
+    for (const id of group.members) fd.append('memberIds', id)
+    const res = await createChatGroupAction({}, fd)
+    setCreating(false)
+    if (res.error) {
+      setGroup({ ...group, error: res.error })
+      return
+    }
+    setGroup(null)
+    setPicking(false)
+    if (res.channel) openConversation(res.channel)
+  }
+
   function onScroll() {
     const el = scrollerRef.current
     if (!el) return
@@ -195,12 +236,120 @@ export function ChatWorkspace({
     <div className="flex h-full min-h-0 overflow-hidden rounded-xl border border-slate-200 bg-white">
       {/* ── Conversation rail ── */}
       <aside className="flex w-72 shrink-0 flex-col border-r border-slate-200 bg-slate-50">
-        <div className="border-b border-slate-200 px-4 py-3">
-          <h2 className="font-semibold text-slate-900">Chats</h2>
-          <p className="text-xs text-slate-500">Channels are team-wide · direct messages are private</p>
+        <div className="space-y-2 border-b border-slate-200 px-3 py-3">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="font-semibold text-slate-900">Chats</h2>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => {
+                  setGroup(group ? null : { name: '', members: [] })
+                  setPicking(false)
+                  setSearch('')
+                }}
+                className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                  group ? 'bg-slate-200 text-slate-700' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
+                }`}
+              >
+                {group ? 'Cancel' : '+ Group'}
+              </button>
+              <button
+                onClick={() => {
+                  setPicking((p) => !p)
+                  setGroup(null)
+                  setSearch('')
+                }}
+                className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                  picking ? 'bg-slate-200 text-slate-700' : 'bg-indigo-600 text-white hover:bg-indigo-500'
+                }`}
+              >
+                {picking ? 'Cancel' : '+ New chat'}
+              </button>
+            </div>
+          </div>
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={picking ? 'Search people…' : 'Search chats and people…'}
+            className="w-full rounded-full border border-slate-300 bg-white px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
+          />
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          {conversations.map((c) => {
+
+        {/* Group builder — name it, tick the members, create. */}
+        {group && (
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <div className="space-y-2 px-3 py-2">
+              <input
+                value={group.name}
+                onChange={(e) => setGroup({ ...group, name: e.target.value, error: undefined })}
+                placeholder="Group name (e.g. Acme launch)"
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
+              />
+              <p className="text-[11px] text-slate-400">
+                {group.members.length} member{group.members.length === 1 ? '' : 's'} selected — you are
+                added automatically.
+              </p>
+              {group.error && <p className="text-xs text-red-600">{group.error}</p>}
+              <button
+                onClick={() => void createGroup()}
+                disabled={creating || group.name.trim().length === 0 || group.members.length === 0}
+                className="w-full rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
+              >
+                {creating ? 'Creating…' : 'Create group'}
+              </button>
+            </div>
+            {people.map((u) => (
+              <label
+                key={u.id}
+                className="flex cursor-pointer items-center gap-3 border-b border-slate-100 px-3 py-2 hover:bg-slate-100"
+              >
+                <input
+                  type="checkbox"
+                  checked={group.members.includes(u.id)}
+                  onChange={() =>
+                    setGroup({
+                      ...group,
+                      error: undefined,
+                      members: group.members.includes(u.id)
+                        ? group.members.filter((id) => id !== u.id)
+                        : [...group.members, u.id],
+                    })
+                  }
+                />
+                <Avatar avatar={null} name={u.name} size="sm" />
+                <span className="truncate text-sm text-slate-800">{u.name}</span>
+              </label>
+            ))}
+          </div>
+        )}
+
+        {/* People picker — start a DM with anyone, messaged before or not. */}
+        {picking && (
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <p className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+              Direct message
+            </p>
+            {people.map((u) => (
+              <button
+                key={u.id}
+                onClick={() => {
+                  setPicking(false)
+                  setSearch('')
+                  openConversation(dmChannelFor(me, u.id))
+                }}
+                className="flex w-full items-center gap-3 border-b border-slate-100 px-3 py-2.5 text-left hover:bg-slate-100"
+              >
+                <Avatar avatar={null} name={u.name} size="md" />
+                <span className="truncate text-sm font-medium text-slate-800">{u.name}</span>
+              </button>
+            ))}
+            {people.length === 0 && (
+              <p className="px-3 py-6 text-center text-sm text-slate-400">No one matches that name.</p>
+            )}
+          </div>
+        )}
+
+        <div className={`min-h-0 flex-1 overflow-y-auto ${picking || group ? 'hidden' : ''}`}>
+          {visible.map((c) => {
             const isActive = c.channel === channel
             return (
               <button
@@ -213,8 +362,12 @@ export function ChatWorkspace({
                 {c.kind === 'dm' ? (
                   <Avatar avatar={c.avatar} name={c.label} size="md" />
                 ) : (
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-200 text-sm font-bold text-slate-500">
-                    #
+                  <div
+                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold ${
+                      c.kind === 'group' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-500'
+                    }`}
+                  >
+                    {c.kind === 'group' ? '👥' : '#'}
                   </div>
                 )}
                 <div className="min-w-0 flex-1">
@@ -238,6 +391,11 @@ export function ChatWorkspace({
               </button>
             )
           })}
+          {visible.length === 0 && (
+            <p className="px-3 py-6 text-center text-sm text-slate-400">
+              No chats match “{search}”.
+            </p>
+          )}
         </div>
       </aside>
 
@@ -247,14 +405,22 @@ export function ChatWorkspace({
           {active?.kind === 'dm' ? (
             <Avatar avatar={active.avatar} name={active.label} size="md" />
           ) : (
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-200 text-sm font-bold text-slate-500">
-              #
+            <div
+              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold ${
+                active?.kind === 'group' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-500'
+              }`}
+            >
+              {active?.kind === 'group' ? '👥' : '#'}
             </div>
           )}
           <div className="min-w-0">
             <p className="truncate font-semibold text-slate-900">{active?.label ?? channel}</p>
             <p className="text-xs text-slate-400">
-              {active?.kind === 'dm' ? 'Private conversation' : 'Everyone in the workspace can see this'}
+              {active?.kind === 'dm'
+                ? 'Private conversation'
+                : active?.kind === 'group'
+                  ? `Private group · ${active.memberCount ?? 0} members`
+                  : 'Everyone in the workspace can see this'}
             </p>
           </div>
         </header>

@@ -13,8 +13,31 @@ export function dmParticipants(channel: string): string[] {
   return channel.startsWith('dm:') ? channel.slice(3).split(':') : []
 }
 
-export function isParticipant(channel: string, userId: string): boolean {
-  return !channel.startsWith('dm:') || dmParticipants(channel).includes(userId)
+/** grp:<groupId> — user-created groups ride the same channel plumbing. */
+export function groupChannel(groupId: string): string {
+  return `grp:${groupId}`
+}
+
+export function groupIdOf(channel: string): string | null {
+  return channel.startsWith('grp:') ? channel.slice(4) : null
+}
+
+/**
+ * May this user read/post in this channel? Public channels are open to the
+ * workspace; a DM needs participation; a group needs membership. Async because
+ * group membership lives in the database — call it before serving ANY channel.
+ */
+export async function canAccessChannel(channel: string, userId: string): Promise<boolean> {
+  const groupId = groupIdOf(channel)
+  if (groupId) {
+    const member = await prisma.chatGroupMember.findUnique({
+      where: { groupId_userId: { groupId, userId } },
+      select: { userId: true },
+    })
+    return member !== null
+  }
+  if (channel.startsWith('dm:')) return dmParticipants(channel).includes(userId)
+  return (CHANNELS as readonly string[]).includes(channel)
 }
 
 export type ChatMessageView = {
@@ -30,11 +53,12 @@ export type ChatMessageView = {
 export type ConversationView = {
   channel: string
   label: string
-  kind: 'channel' | 'dm'
+  kind: 'channel' | 'dm' | 'group'
   avatar: string | null
   lastBody: string | null
   lastAt: string | null
   unread: number
+  memberCount?: number
 }
 
 type UserRow = { id: string; name: string; avatar: string | null }
@@ -87,7 +111,16 @@ export async function getMessages(
  */
 export async function getConversations(me: string, users: UserRow[]): Promise<ConversationView[]> {
   const others = users.filter((u) => u.id !== me)
-  const channels = [...CHANNELS, ...others.map((u) => dmChannel(me, u.id))]
+  const myGroups = await prisma.chatGroup.findMany({
+    where: { members: { some: { userId: me } } },
+    select: { id: true, name: true, _count: { select: { members: true } } },
+  })
+  const groupMeta = new Map(myGroups.map((g) => [groupChannel(g.id), g]))
+  const channels = [
+    ...CHANNELS,
+    ...myGroups.map((g) => groupChannel(g.id)),
+    ...others.map((u) => dmChannel(me, u.id)),
+  ]
 
   const [reads, lastMessages, unreadRows] = await Promise.all([
     prisma.chatRead.findMany({ where: { userId: me } }),
@@ -119,13 +152,15 @@ export async function getConversations(me: string, users: UserRow[]): Promise<Co
   const byId = new Map(users.map((u) => [u.id, u]))
   const rows: ConversationView[] = channels.map((channel) => {
     const isDm = channel.startsWith('dm:')
+    const group = groupMeta.get(channel)
     const otherId = isDm ? dmParticipants(channel).find((id) => id !== me) : null
     const other = otherId ? byId.get(otherId) : null
     const l = last.get(channel)
     return {
       channel,
-      kind: isDm ? 'dm' : 'channel',
-      label: isDm ? (other?.name ?? 'teammate') : `#${channel}`,
+      kind: group ? 'group' : isDm ? 'dm' : 'channel',
+      label: group ? group.name : isDm ? (other?.name ?? 'teammate') : `#${channel}`,
+      memberCount: group?._count.members,
       avatar: isDm ? (other?.avatar ?? null) : null,
       lastBody: l?.body ?? null,
       lastAt: l?.at.toISOString() ?? null,

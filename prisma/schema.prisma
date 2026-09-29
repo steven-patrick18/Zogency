@@ -1681,6 +1681,34 @@ model TicketMessage {
 }
 
 // Internal team chat with @mentions (append-only).
+/// A user-created chat group (WhatsApp-style). Its channel id is grp:<id>, so
+/// it flows through the same message/read plumbing as channels and DMs.
+model ChatGroup {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  name        String
+  createdById String   @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  members ChatGroupMember[]
+
+  @@index([tenantId])
+  @@map("chat_groups")
+}
+
+model ChatGroupMember {
+  tenantId String   @map("tenant_id") @db.Uuid
+  groupId  String   @map("group_id") @db.Uuid
+  userId   String   @map("user_id") @db.Uuid
+  addedAt  DateTime @default(now()) @map("added_at")
+
+  group ChatGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@id([groupId, userId])
+  @@index([tenantId, userId])
+  @@map("chat_group_members")
+}
+
 /// Per-user read cursor for a chat channel — drives the unread badges on the
 /// conversation list. One row per (user, channel); written when they open it.
 model ChatRead {
