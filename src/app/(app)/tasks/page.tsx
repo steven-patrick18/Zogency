@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { requirePermission, withTenant } from '@/lib/authz'
 import { prisma } from '@/lib/db/prisma'
 import { changeTaskStatusAction } from '@/modules/tasks/actions'
+import { Avatar } from '@/components/avatar'
 import { canEditTask } from '@/modules/tasks/task-scope'
 import { NewTaskForm } from './new-task-form'
 
@@ -24,13 +25,14 @@ export default async function TasksPage() {
     Promise.all([
       prisma.task.findMany({ include: { project: { include: { client: true } }, assignees: true, _count: { select: { attachments: true } } }, orderBy: { createdAt: 'desc' } }),
       prisma.department.findMany({ orderBy: { sort: 'asc' } }),
-      prisma.user.findMany({ where: { status: 'active' }, select: { id: true, name: true } }),
+      prisma.user.findMany({ where: { status: 'active' }, select: { id: true, name: true, avatar: true } }),
       prisma.project.findMany({ where: { status: 'active' }, select: { id: true, name: true } }),
       prisma.tenantSettings.findFirst({ select: { requireTaskApproval: true } }),
     ]),
   )
   const deptName = new Map(departments.map((d) => [d.id, d.name]))
   const userName = new Map(users.map((u) => [u.id, u.name]))
+  const userAvatar = new Map(users.map((u) => [u.id, u.avatar]))
   const gate = settings?.requireTaskApproval ?? false
   // With the gate on, "Done" is only offered to an approver on a task in Review.
   const allowedTargets = (status: string) =>
@@ -78,10 +80,22 @@ export default async function TasksPage() {
                       {t.departmentId ? ` · ${deptName.get(t.departmentId)}` : ''}
                       {t._count.attachments > 0 ? ` · 📎 ${t._count.attachments}` : ''}
                     </p>
-                    <p className="text-xs text-slate-400">
-                      {t.assignees.length > 0
-                        ? t.assignees.map((a) => userName.get(a.userId) ?? '?').join(', ')
-                        : 'Unassigned'}
+                    <p className="flex items-center gap-1 text-xs text-slate-400">
+                      {t.assignees.length > 0 ? (
+                        <>
+                          {t.assignees.map((a) => (
+                            <Avatar
+                              key={a.userId}
+                              avatar={userAvatar.get(a.userId) ?? null}
+                              name={userName.get(a.userId) ?? '?'}
+                              size="xs"
+                            />
+                          ))}
+                          <span>{t.assignees.map((a) => userName.get(a.userId) ?? '?').join(', ')}</span>
+                        </>
+                      ) : (
+                        'Unassigned'
+                      )}
                       {t.deadline ? ` · due ${t.deadline.toDateString()}` : ''}
                       {` · ${t.priority}`}
                     </p>

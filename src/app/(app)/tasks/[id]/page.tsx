@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import { requirePermission, withTenant } from '@/lib/authz'
 import { prisma } from '@/lib/db/prisma'
 import { changeTaskStatusAction } from '@/modules/tasks/actions'
+import { Avatar } from '@/components/avatar'
 import { canEditTask, TASK_EDIT_DENIED } from '@/modules/tasks/task-scope'
 import { AttachmentForm } from './attachment-form'
 import { EditTaskForm } from './edit-task-form'
@@ -41,7 +42,7 @@ export default async function TaskDetailPage({ params }: { params: Promise<{ id:
     })
     if (!task) return null
     const [users, departments, projects, settings] = await Promise.all([
-      prisma.user.findMany({ select: { id: true, name: true } }),
+      prisma.user.findMany({ select: { id: true, name: true, avatar: true } }),
       prisma.department.findMany({ select: { id: true, name: true } }),
       prisma.project.findMany({ where: { status: 'active' }, select: { id: true, name: true } }),
       prisma.tenantSettings.findFirst({ select: { requireTaskApproval: true } }),
@@ -55,6 +56,7 @@ export default async function TaskDetailPage({ params }: { params: Promise<{ id:
   const canEditThis =
     canEdit && canEditTask({ id: session.user.id, permissions: session.user.permissions }, task)
   const userName = new Map(users.map((u) => [u.id, u.name]))
+  const userAvatar = new Map(users.map((u) => [u.id, u.avatar]))
   const deptName = new Map(departments.map((d) => [d.id, d.name]))
 
   const targets = COLUMNS.filter((c) => c.key !== task.status).filter((c) => {
@@ -87,7 +89,18 @@ export default async function TaskDetailPage({ params }: { params: Promise<{ id:
             <div className="flex justify-between"><dt className="text-slate-500">Department</dt><dd className="font-medium text-slate-800">{task.departmentId ? deptName.get(task.departmentId) ?? '—' : '—'}</dd></div>
             <div className="flex justify-between"><dt className="text-slate-500">Deadline</dt><dd className="font-medium text-slate-800">{task.deadline ? task.deadline.toDateString() : '—'}</dd></div>
             <div className="flex justify-between"><dt className="text-slate-500">Priority</dt><dd className="font-medium capitalize text-slate-800">{task.priority}</dd></div>
-            <div className="flex justify-between"><dt className="text-slate-500">Assignees</dt><dd className="font-medium text-slate-800">{task.assignees.length ? task.assignees.map((a) => userName.get(a.userId) ?? '?').join(', ') : 'Unassigned'}</dd></div>
+            <div className="flex justify-between"><dt className="text-slate-500">Assignees</dt><dd className="flex items-center gap-1 font-medium text-slate-800">
+              {task.assignees.length ? (
+                <>
+                  {task.assignees.map((a) => (
+                    <Avatar key={a.userId} avatar={userAvatar.get(a.userId) ?? null} name={userName.get(a.userId) ?? '?'} size="xs" />
+                  ))}
+                  <span>{task.assignees.map((a) => userName.get(a.userId) ?? '?').join(', ')}</span>
+                </>
+              ) : (
+                'Unassigned'
+              )}
+            </dd></div>
           </dl>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-4">

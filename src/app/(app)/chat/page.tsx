@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { requireSession, withTenant } from '@/lib/authz'
+import { Avatar } from '@/components/avatar'
 import { prisma } from '@/lib/db/prisma'
 import { ChatForm } from './chat-form'
 
@@ -37,8 +38,11 @@ export default async function ChatPage({
   const params = await searchParams
   const raw = params.channel ?? 'general'
 
-  const users = await withTenant(() => prisma.user.findMany({ where: { status: 'active' }, select: { id: true, name: true } }))
+  const users = await withTenant(() =>
+    prisma.user.findMany({ where: { status: 'active' }, select: { id: true, name: true, avatar: true } }),
+  )
   const userName = new Map(users.map((u) => [u.id, u.name]))
+  const userAvatar = new Map(users.map((u) => [u.id, u.avatar]))
 
   // Resolve channel: a public one, or a DM the current user is a participant of.
   const isPublic = (CHANNELS as readonly string[]).includes(raw)
@@ -54,7 +58,13 @@ export default async function ChatPage({
   const messages = rawMessages
     .slice()
     .reverse()
-    .map((m) => ({ id: m.id, author: userName.get(m.authorId) ?? 'Unknown', body: m.body, at: m.createdAt.toISOString() }))
+    .map((m) => ({
+      id: m.id,
+      author: userName.get(m.authorId) ?? 'Unknown',
+      avatar: userAvatar.get(m.authorId) ?? null,
+      body: m.body,
+      at: m.createdAt.toISOString(),
+    }))
 
   const others = users.filter((u) => u.id !== me)
 
@@ -104,12 +114,15 @@ export default async function ChatPage({
           </p>
         )}
         {messages.map((m) => (
-          <div key={m.id} className="text-sm">
-            <div className="flex items-baseline gap-2">
-              <span className="font-semibold text-slate-900">{m.author}</span>
-              <span className="text-xs text-slate-400">{new Date(m.at).toLocaleString()}</span>
+          <div key={m.id} className="flex gap-2.5 text-sm">
+            <Avatar avatar={m.avatar} name={m.author} size="sm" />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-baseline gap-2">
+                <span className="font-semibold text-slate-900">{m.author}</span>
+                <span className="text-xs text-slate-400">{new Date(m.at).toLocaleString()}</span>
+              </div>
+              <p className="mt-0.5 whitespace-pre-wrap text-slate-700">{renderBody(m.body)}</p>
             </div>
-            <p className="mt-0.5 whitespace-pre-wrap text-slate-700">{renderBody(m.body)}</p>
           </div>
         ))}
       </div>

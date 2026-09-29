@@ -1,21 +1,9 @@
 import Link from 'next/link'
 import { requireSession, withTenant } from '@/lib/authz'
+import { Avatar } from '@/components/avatar'
 import { prisma } from '@/lib/db/prisma'
 import { visibleRoles } from '@/lib/roles'
 import { createUser, toggleUserStatus } from '@/modules/users/actions'
-
-function Avatar({ avatar, name }: { avatar: string | null; name: string }) {
-  if (avatar) {
-    // eslint-disable-next-line @next/next/no-img-element
-    return <img src={avatar} alt={name} className="h-8 w-8 rounded-full object-cover" />
-  }
-  const initials = name.split(/\s+/).map((p) => p[0]).slice(0, 2).join('').toUpperCase()
-  return (
-    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-600">
-      {initials}
-    </div>
-  )
-}
 
 const field =
   'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none'

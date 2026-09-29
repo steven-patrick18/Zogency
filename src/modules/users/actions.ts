@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import bcrypt from 'bcryptjs'
 import { z } from 'zod'
 import { audit, redact } from '@/lib/audit'
-import { requirePermission, withTenant } from '@/lib/authz'
+import { requirePermission, requireSession, withTenant } from '@/lib/authz'
 import { prisma, scoped } from '@/lib/db/prisma'
 import { notify } from '@/lib/notify'
 import { isInternalRole } from '@/lib/roles'
@@ -245,12 +245,35 @@ export async function resetPasswordAction(
 const AVATAR_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'])
 const AVATAR_MAX_BYTES = 300_000
 
+/**
+ * Who may set a person's photo: a user administrator for anyone, or HR for
+ * someone on the employee roster. HR owns staff records but deliberately does
+ * NOT hold users.manage (they must not be able to grant roles), so gating
+ * photos on users.manage alone left HR unable to do an HR job.
+ */
+async function requireAvatarRights(userId: string) {
+  const session = await requireSession()
+  if (session.user.permissions.includes('users.manage')) return session
+  if (session.user.permissions.includes('hr.manage')) {
+    const employee = await withTenant(() =>
+      prisma.employee.findUnique({ where: { userId }, select: { id: true } }),
+    )
+    if (employee) return session
+    throw new Error('That person is not on the employee roster')
+  }
+  throw new Error('You do not have permission to change this photo')
+}
+
 export async function uploadAvatarAction(
   _prev: { error?: string; success?: string },
   formData: FormData,
 ): Promise<{ error?: string; success?: string }> {
-  await requirePermission('users.manage')
   const userId = z.string().uuid().parse(formData.get('userId'))
+  try {
+    await requireAvatarRights(userId)
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : 'Not permitted' }
+  }
   const file = formData.get('avatar')
   if (!(file instanceof File) || file.size === 0) return { error: 'Choose an image' }
   if (!AVATAR_TYPES.has(file.type)) return { error: 'Use a PNG, JPEG, or WebP image' }
@@ -261,18 +284,20 @@ export async function uploadAvatarAction(
     await prisma.user.update({ where: { id: userId }, data: { avatar: dataUri } })
     await audit('user.avatar_set', 'user', userId, null, { size: file.size, type: file.type })
   })
-  revalidatePath(`/settings/users/${userId}`)
-  revalidatePath('/settings/users')
+  // The photo now shows on chat, comments, task cards and the HR roster, so
+  // refresh the whole tree rather than just the two settings pages.
   revalidatePath('/', 'layout')
   return { success: 'Photo updated' }
 }
 
 export async function removeAvatarAction(formData: FormData) {
-  await requirePermission('users.manage')
   const userId = z.string().uuid().parse(formData.get('userId'))
-  await withTenant(() => prisma.user.update({ where: { id: userId }, data: { avatar: null } }))
-  revalidatePath(`/settings/users/${userId}`)
-  revalidatePath('/settings/users')
+  await requireAvatarRights(userId)
+  await withTenant(async () => {
+    await prisma.user.update({ where: { id: userId }, data: { avatar: null } })
+    await audit('user.avatar_removed', 'user', userId, null, null)
+  })
+  revalidatePath('/', 'layout')
 }
 
 export async function toggleUserStatus(formData: FormData) {

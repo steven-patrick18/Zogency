@@ -3,6 +3,7 @@ import { requirePermission, withTenant } from '@/lib/authz'
 import { prisma } from '@/lib/db/prisma'
 import { getLeadTimeline } from '@/modules/pipeline/service'
 import { StatusChangeModal } from '@/modules/pipeline/status-modal'
+import { Avatar } from '@/components/avatar'
 import { maskEmail, maskPhone } from '@/lib/mask'
 import { BantForm, ContactReveal, EditLeadForm, LogCallForm, ReassignForm } from './panels'
 import { LeadMeetingForm } from './lead-meeting-form'
@@ -25,7 +26,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
     if (!canViewAll && lead.ownerId !== session.user.id) return null
     const [statuses, users, bant, timeline, deal, meetings] = await Promise.all([
       prisma.leadStatus.findMany({ orderBy: { sort: 'asc' } }),
-      prisma.user.findMany({ where: { status: 'active' }, select: { id: true, name: true } }),
+      prisma.user.findMany({ where: { status: 'active' }, select: { id: true, name: true, avatar: true } }),
       prisma.bantQualification.findUnique({ where: { leadId: id } }),
       getLeadTimeline(id),
       prisma.deal.findUnique({ where: { leadId: id } }),
@@ -36,6 +37,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
   if (!data) notFound()
   const { lead, statuses, users, bant, timeline, deal, meetings } = data
   const userName = new Map(users.map((u) => [u.id, u.name]))
+  const userAvatar = new Map(users.map((u) => [u.id, u.avatar]))
 
   return (
     <div className="grid max-w-5xl grid-cols-5 gap-6">
@@ -143,8 +145,20 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
                       ▶ Play recording
                     </a>
                   )}
-                  <p className="text-xs text-slate-400">
-                    {e.at.toLocaleString()} · {e.actorId ? (userName.get(e.actorId) ?? 'user') : 'system'}
+                  <p className="flex items-center gap-1.5 text-xs text-slate-400">
+                    {e.at.toLocaleString()} ·{' '}
+                    {e.actorId ? (
+                      <>
+                        <Avatar
+                          avatar={userAvatar.get(e.actorId) ?? null}
+                          name={userName.get(e.actorId) ?? 'user'}
+                          size="xs"
+                        />
+                        {userName.get(e.actorId) ?? 'user'}
+                      </>
+                    ) : (
+                      'system'
+                    )}
                   </p>
                 </div>
               </li>

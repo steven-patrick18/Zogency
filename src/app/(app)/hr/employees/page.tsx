@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { requirePermission, withTenant } from '@/lib/authz'
+import { Avatar } from '@/components/avatar'
 import { prisma } from '@/lib/db/prisma'
 import { visibleRoles } from '@/lib/roles'
 import { ExitPanel } from './employee-panels'
@@ -22,12 +23,13 @@ export default async function EmployeesPage() {
         orderBy: { joinedOn: 'asc' },
         include: { onboardingItems: true, exit: true },
       }),
-      prisma.user.findMany({ where: { status: 'active' }, select: { id: true, name: true } }),
+      prisma.user.findMany({ where: { status: 'active' }, select: { id: true, name: true, avatar: true } }),
       prisma.department.findMany({ orderBy: { sort: 'asc' } }),
       prisma.role.findMany({ orderBy: { name: 'asc' }, select: { id: true, name: true } }),
     ]),
   )
   const userName = new Map(users.map((u) => [u.id, u.name]))
+  const userAvatar = new Map(users.map((u) => [u.id, u.avatar]))
   const departmentName = new Map(departments.map((d) => [d.id, d.name]))
   const assignableRoles = visibleRoles(roles, canVendor)
 
@@ -60,7 +62,11 @@ export default async function EmployeesPage() {
             return (
               <tr key={e.id} className="align-top">
                 <td className="px-4 py-3 font-medium text-slate-900">
-                  <Link href={`/hr/employees/${e.id}`} className="hover:text-indigo-600 hover:underline">
+                  <Link
+                    href={`/hr/employees/${e.id}`}
+                    className="flex items-center gap-2 hover:text-indigo-600 hover:underline"
+                  >
+                    <Avatar avatar={userAvatar.get(e.userId) ?? null} name={userName.get(e.userId) ?? '?'} size="sm" />
                     {userName.get(e.userId) ?? '—'}
                   </Link>
                 </td>

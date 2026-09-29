@@ -1,6 +1,8 @@
 import { notFound } from 'next/navigation'
 import { requirePermission, withTenant } from '@/lib/authz'
+import { Avatar } from '@/components/avatar'
 import { prisma } from '@/lib/db/prisma'
+import { AvatarPanel } from '@/app/(app)/settings/users/[id]/edit-panels'
 import { AgentTokenPanel, ConfirmEmploymentForm, DocumentsPanel, JobDetailsForm, WeeklyOffForm } from './profile-panels'
 
 const STATUS_STYLES: Record<string, string> = {
@@ -13,15 +15,6 @@ const TYPE_STYLES: Record<string, string> = {
   permanent: 'bg-indigo-100 text-indigo-700',
   contract: 'bg-blue-100 text-blue-700',
   intern: 'bg-purple-100 text-purple-700',
-}
-
-function initials(name: string): string {
-  return name
-    .split(/\s+/)
-    .map((p) => p[0])
-    .slice(0, 2)
-    .join('')
-    .toUpperCase()
 }
 
 export default async function EmployeeProfilePage({ params }: { params: Promise<{ id: string }> }) {
@@ -60,14 +53,7 @@ export default async function EmployeeProfilePage({ params }: { params: Promise<
     <div className="max-w-5xl">
       <div className="rounded-xl border border-slate-200 bg-white p-5">
         <div className="flex items-start gap-4">
-          {user.avatar ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={user.avatar} alt={user.name} className="h-16 w-16 rounded-full object-cover" />
-          ) : (
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-indigo-100 text-lg font-semibold text-indigo-700">
-              {initials(user.name)}
-            </div>
-          )}
+          <Avatar avatar={user.avatar} name={user.name} size="lg" />
           <div className="flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-2xl font-bold text-slate-900">{user.name}</h1>
@@ -91,6 +77,14 @@ export default async function EmployeeProfilePage({ params }: { params: Promise<
           </div>
         </div>
       </div>
+
+      {/* HR sets the staff photo here — it then appears on chat, comments,
+          task cards and the team roster. */}
+      {canManage && (
+        <div className="mt-6">
+          <AvatarPanel userId={user.id} avatar={user.avatar} name={user.name} />
+        </div>
+      )}
 
       <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* LEFT */}
