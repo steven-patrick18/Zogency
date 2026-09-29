@@ -31,7 +31,10 @@ export const INTEGRATION_CATALOG: ProviderDef[] = [
     fields: [
       { key: 'pageId', label: 'Facebook Page ID', required: true },
       { key: 'pageToken', label: 'Page access token', type: 'password', required: true },
-      { key: 'appSecret', label: 'App secret (webhook signature)', type: 'password' },
+      // Required, not optional: the webhook verifies X-Hub-Signature-256 on
+      // every payload and rejects with 401 when no secret is configured, so
+      // saving without it produces a connector that silently receives nothing.
+      { key: 'appSecret', label: 'App secret (webhook signature)', type: 'password', required: true, hint: 'From your Meta app — leads are REJECTED without it (every payload is signature-verified)' },
       { key: 'verifyToken', label: 'Webhook verify token', required: true, hint: 'Any string — paste the same value in the Meta webhook setup' },
     ],
   },
