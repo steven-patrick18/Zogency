@@ -7,6 +7,8 @@ import { decryptJson } from '@/lib/crypto'
 import { runWithTenant } from '@/lib/db/context'
 import { prisma, prismaUnscoped, scoped } from '@/lib/db/prisma'
 import { enqueue, registerProcessor } from '@/lib/queue'
+import { getIntegrationConfig } from '@/modules/integrations/service'
+import { extractLeadgenId, fetchMetaLeadFields, hasInlineFieldData } from './meta-graph'
 import { createLead, type LeadInput } from './service'
 
 type IntakeSource = 'website' | 'meta' | 'google'
@@ -67,7 +69,9 @@ registerProcessor('lead-intake', async (payload) => {
   const eventId = payload.webhookEventId as string
   const event = await prisma.webhookEvent.findUniqueOrThrow({ where: { id: eventId } })
   try {
-    const input = mapPayload(event.source as IntakeSource, event.raw)
+    const source = event.source as IntakeSource
+    const raw = source === 'meta' ? await enrichMetaPayload(event.raw) : event.raw
+    const input = mapPayload(source, raw)
     const result = await createLead(input)
     if (result.outcome === 'rejected') {
       await prisma.webhookEvent.update({
@@ -87,6 +91,24 @@ registerProcessor('lead-intake', async (payload) => {
     })
   }
 })
+
+/**
+ * A live Meta leadgen webhook carries only the lead's ID — the answers must be
+ * fetched from the Graph API with the stored Page access token. Meta's own test
+ * sender inlines field_data, so that case is passed through untouched.
+ * Runs inside the job's tenant context, so the credential lookup is scoped.
+ */
+async function enrichMetaPayload(raw: unknown): Promise<unknown> {
+  if (hasInlineFieldData(raw)) return raw
+  const leadgenId = extractLeadgenId(raw)
+  if (!leadgenId) throw new Error('Meta webhook carried neither field_data nor a leadgen_id')
+
+  const config = await getIntegrationConfig<{ pageToken?: string }>('meta')
+  if (!config?.pageToken) {
+    throw new Error('Meta is not connected (no Page access token) — reconnect it in Settings → Integrations')
+  }
+  return { field_data: await fetchMetaLeadFields(leadgenId, config.pageToken) }
+}
 
 /** Maps provider payload shapes to LeadInput. */
 export function mapPayload(source: IntakeSource, raw: unknown): LeadInput {

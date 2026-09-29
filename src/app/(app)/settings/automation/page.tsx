@@ -3,6 +3,7 @@
 import { requirePermission, withTenant } from '@/lib/authz'
 import { prisma } from '@/lib/db/prisma'
 import { toggleRuleAction } from '@/modules/retention/actions'
+import { LeadRoutingForm } from './lead-routing'
 
 const RUN_STATUS_STYLES: Record<string, string> = {
   success: 'bg-green-100 text-green-700',
@@ -13,20 +14,62 @@ const RUN_STATUS_STYLES: Record<string, string> = {
 export default async function AutomationSettingsPage() {
   await requirePermission('automation.manage')
 
-  const { rules, runs } = await withTenant(async () => {
-    const [rules, runs] = await Promise.all([
+  const { rules, runs, routingRule, users } = await withTenant(async () => {
+    const [rules, runs, routingRule, activeUsers, salesRepRole] = await Promise.all([
       prisma.automationRule.findMany({ orderBy: [{ runOrder: 'asc' }, { createdAt: 'asc' }] }),
       prisma.automationRun.findMany({
         include: { rule: { select: { name: true } } },
         orderBy: { at: 'desc' },
         take: 20,
       }),
+      prisma.assignmentRule.findFirst({ orderBy: { priority: 'asc' } }),
+      prisma.user.findMany({
+        where: { status: 'active' },
+        select: { id: true, name: true },
+        orderBy: { name: 'asc' },
+      }),
+      prisma.role.findFirst({ where: { name: 'Sales Rep' }, select: { id: true } }),
     ])
-    return { rules, runs }
+    const repIds = salesRepRole
+      ? new Set(
+          (await prisma.userRole.findMany({ where: { roleId: salesRepRole.id }, select: { userId: true } })).map(
+            (r) => r.userId,
+          ),
+        )
+      : new Set<string>()
+    return {
+      rules,
+      runs,
+      routingRule,
+      users: activeUsers.map((u) => ({ ...u, isSalesRep: repIds.has(u.id) })),
+    }
   })
 
   return (
     <div className="space-y-6">
+      {/* Lead routing — who new leads get assigned to (FR-1.5). */}
+      <div className="rounded-xl border border-slate-200 bg-white p-5">
+        <h2 className="font-semibold text-slate-900">Lead routing</h2>
+        <p className="mt-0.5 text-xs text-slate-400">
+          Every new lead — from Meta, Google, the website form or manual entry — is handed to the next person in
+          this rotation (least-recently-assigned first).
+        </p>
+        <div className="mt-3">
+          <LeadRoutingForm
+            rule={
+              routingRule
+                ? {
+                    id: routingRule.id,
+                    name: routingRule.name,
+                    targetUserIds: (routingRule.targetUserIds as string[]) ?? [],
+                  }
+                : null
+            }
+            users={users}
+          />
+        </div>
+      </div>
+
       <div className="rounded-xl border border-slate-200 bg-white p-5">
         <h2 className="font-semibold text-slate-900">Automation rules</h2>
         <p className="mt-0.5 text-xs text-slate-400">
