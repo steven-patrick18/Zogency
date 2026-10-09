@@ -4,7 +4,8 @@ import { requirePermission, withTenant } from '@/lib/authz'
 import { prisma } from '@/lib/db/prisma'
 import { changeTaskStatusAction } from '@/modules/tasks/actions'
 import { Avatar } from '@/components/avatar'
-import { canEditTask, TASK_EDIT_DENIED, taskVisibilityWhere } from '@/modules/tasks/task-scope'
+import { canEditTask, canReassignTask, TASK_EDIT_DENIED, taskVisibilityWhere } from '@/modules/tasks/task-scope'
+import { AssigneesForm } from './assignees-form'
 import { AttachmentForm } from './attachment-form'
 import { EditTaskForm } from './edit-task-form'
 
@@ -44,7 +45,7 @@ export default async function TaskDetailPage({ params }: { params: Promise<{ id:
     })
     if (!task) return null
     const [users, departments, projects, settings] = await Promise.all([
-      prisma.user.findMany({ select: { id: true, name: true, avatar: true } }),
+      prisma.user.findMany({ where: { status: 'active' }, select: { id: true, name: true, avatar: true }, orderBy: { name: 'asc' } }),
       prisma.department.findMany({ select: { id: true, name: true } }),
       prisma.project.findMany({ where: { status: 'active' }, select: { id: true, name: true } }),
       prisma.tenantSettings.findFirst({ select: { requireTaskApproval: true } }),
@@ -55,8 +56,10 @@ export default async function TaskDetailPage({ params }: { params: Promise<{ id:
   const { task, users, departments, projects, gate } = data
   // Scoped edit rights (BRB): the board stays visible to everyone, but only the
   // task's own people — or a tasks.manage holder — can change it.
-  const canEditThis =
-    canEdit && canEditTask({ id: session.user.id, permissions: session.user.permissions }, task)
+  const actor = { id: session.user.id, permissions: session.user.permissions }
+  const canEditThis = canEdit && canEditTask(actor, task)
+  // Reassigning is stricter than editing: creator or a tasks.manage holder.
+  const canReassignThis = canEdit && canReassignTask(actor, task)
   const userName = new Map(users.map((u) => [u.id, u.name]))
   const userAvatar = new Map(users.map((u) => [u.id, u.avatar]))
   const deptName = new Map(departments.map((d) => [d.id, d.name]))
@@ -112,6 +115,16 @@ export default async function TaskDetailPage({ params }: { params: Promise<{ id:
       </div>
 
       {/* Edit + status controls — only for this task's own people */}
+      {canReassignThis && (
+        <div className="mt-4">
+          <AssigneesForm
+            taskId={task.id}
+            current={task.assignees.map((a) => a.userId)}
+            users={users}
+          />
+        </div>
+      )}
+
       {canEditThis && (
         <div className="mt-4">
           <EditTaskForm

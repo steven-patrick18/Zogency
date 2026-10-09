@@ -197,27 +197,52 @@ export async function updateTaskAction(_p: TaskActionState, formData: FormData):
   return { success: 'Task updated' }
 }
 
-/** Replace a task's assignee set (BRB — reassign to one or many). */
-export async function setTaskAssigneesAction(formData: FormData): Promise<void> {
+/**
+ * Replace a task's assignee set (BRB — one or many people on a task).
+ * Returns state rather than throwing: this is a form the user drives, so a
+ * refusal should read as a message, not a 500.
+ */
+export async function setTaskAssigneesAction(
+  _p: TaskActionState,
+  formData: FormData,
+): Promise<TaskActionState> {
   const session = await requirePermission('tasks.edit')
   const taskId = uuid.parse(formData.get('taskId'))
   const assigneeIds = readAssigneeIds(formData, session.user.id)
-  await withTenant(async () => {
-    const before = await prisma.task.findUniqueOrThrow({ where: { id: taskId }, include: { assignees: true } })
-    if (!canReassignTask(actorOf(session), before)) throw new Error(TASK_REASSIGN_DENIED)
-    const prev = new Set(before.assignees.map((a) => a.userId))
-    await prisma.taskAssignee.deleteMany({ where: { taskId } })
-    await prisma.taskAssignee.createMany({
-      data: assigneeIds.map((userId) => scoped({ taskId, userId })),
-      skipDuplicates: true,
+  try {
+    await withTenant(async () => {
+      const before = await prisma.task.findUniqueOrThrow({ where: { id: taskId }, include: { assignees: true } })
+      if (!canReassignTask(actorOf(session), before)) throw new Error(TASK_REASSIGN_DENIED)
+      const valid = await prisma.user.findMany({
+        where: { id: { in: assigneeIds }, status: 'active' },
+        select: { id: true },
+      })
+      if (valid.length === 0) throw new Error('Pick at least one active person')
+      const ids = valid.map((u) => u.id)
+      const prev = new Set(before.assignees.map((a) => a.userId))
+      await prisma.taskAssignee.deleteMany({ where: { taskId } })
+      await prisma.taskAssignee.createMany({
+        data: ids.map((userId) => scoped({ taskId, userId })),
+        skipDuplicates: true,
+      })
+      await prisma.task.update({ where: { id: taskId }, data: { assigneeId: ids[0] } })
+      // Only notify the newly-added people.
+      const fresh = ids.filter((id) => !prev.has(id))
+      await notifyAssigned(fresh, session.user.id, session.user.name ?? 'Someone', before.title)
+      await audit(
+        'task.reassign',
+        'task',
+        taskId,
+        { assignees: [...prev] },
+        { assignees: ids },
+      )
     })
-    await prisma.task.update({ where: { id: taskId }, data: { assigneeId: assigneeIds[0] } })
-    // Only notify the newly-added people.
-    const fresh = assigneeIds.filter((id) => !prev.has(id))
-    await notifyAssigned(fresh, session.user.id, session.user.name ?? 'Someone', before.title)
-    await audit('task.reassign', 'task', taskId, null, { assignees: assigneeIds.length })
-  })
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : 'Could not update the assignees' }
+  }
   revalidatePath('/tasks')
+  revalidatePath(`/tasks/${taskId}`)
+  return { success: 'Assignees updated' }
 }
 
 /** Attach files to an existing task (from the task detail page). */
