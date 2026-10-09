@@ -140,27 +140,57 @@ export async function createDepartment(formData: FormData) {
   revalidatePath('/settings/departments')
 }
 
-export async function deleteDepartment(formData: FormData) {
+export type DeleteDeptState = { error?: string; success?: string }
+
+/**
+ * Remove a department, refusing while anything still points at it.
+ *
+ * Returns state rather than throwing: this used to throw, and Next rendered
+ * the refusal as a full "This page couldn't load" crash, so an in-use
+ * department looked like a broken app instead of a rule.
+ *
+ * NOTE departmentId on tasks/employees/job_requisitions is a plain uuid
+ * column with no FK back to departments, so the database will NOT stop a
+ * delete — this check is the only thing preventing orphaned rows. Anything
+ * that gains a departmentId must be counted here too.
+ */
+export async function deleteDepartment(
+  _p: DeleteDeptState,
+  formData: FormData,
+): Promise<DeleteDeptState> {
   await requirePermission('settings.manage')
   const id = z.string().uuid().parse(formData.get('id'))
-  await withTenant(async () => {
-    await assertWritable()
-    const before = await prisma.department.findUnique({ where: { id } })
-    if (!before) return
-    // Don't orphan people or task boards — block deletion while in use.
-    const [employees, tasks] = await Promise.all([
-      prisma.employee.count({ where: { departmentId: id } }),
-      prisma.task.count({ where: { departmentId: id } }),
-    ])
-    if (employees > 0 || tasks > 0) {
-      throw new Error(
-        `Can't remove "${before.name}" — it still has ${employees} employee(s) and ${tasks} task(s). Reassign them first.`,
-      )
-    }
-    await prisma.department.delete({ where: { id } })
-    await audit('department.delete', 'department', id, { name: before.name }, null)
-  })
-  revalidatePath('/settings/departments')
+  try {
+    const result = await withTenant(async () => {
+      await assertWritable()
+      const before = await prisma.department.findUnique({ where: { id } })
+      if (!before) return { error: 'That department no longer exists.' }
+
+      const [employees, tasks, requisitions] = await Promise.all([
+        prisma.employee.count({ where: { departmentId: id } }),
+        prisma.task.count({ where: { departmentId: id } }),
+        prisma.jobRequisition.count({ where: { departmentId: id } }),
+      ])
+      const blockers = [
+        employees && `${employees} employee${employees === 1 ? '' : 's'}`,
+        tasks && `${tasks} task${tasks === 1 ? '' : 's'}`,
+        requisitions && `${requisitions} open requisition${requisitions === 1 ? '' : 's'}`,
+      ].filter(Boolean)
+      if (blockers.length > 0) {
+        return {
+          error: `Can't remove "${before.name}" — it still has ${blockers.join(' and ')}. Move them to another department first.`,
+        }
+      }
+
+      await prisma.department.delete({ where: { id } })
+      await audit('department.delete', 'department', id, { name: before.name }, null)
+      return { success: `"${before.name}" removed.` }
+    })
+    revalidatePath('/settings/departments')
+    return result
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : 'Could not remove the department' }
+  }
 }
 
 export async function activateLicense(formData: FormData) {
