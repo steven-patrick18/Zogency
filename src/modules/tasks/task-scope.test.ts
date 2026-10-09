@@ -3,7 +3,9 @@ import {
   canEditTask,
   canManageAnyTask,
   canReassignTask,
+  canViewTask,
   ownsTask,
+  taskVisibilityWhere,
   type TaskActor,
   type TaskOwnership,
 } from './task-scope'
@@ -86,5 +88,54 @@ describe('canReassignTask', () => {
 
   it('allows a tasks.manage holder', () => {
     expect(canReassignTask(actor(CARA, 'tasks.manage'), task(ALICE, BOB))).toBe(true)
+  })
+})
+
+// BRB's scenario: Faizal owns the client, the project's task is assigned to
+// Ranu, and nobody else should see it.
+const FAIZAL = 'f0000000-0000-0000-0000-000000000004'
+const RANU = 'r0000000-0000-0000-0000-000000000005'
+const BYSTANDER = 'z0000000-0000-0000-0000-000000000009'
+const deliveryTask = { createdById: null, assignees: [{ userId: RANU }], clientOwnerId: FAIZAL }
+
+describe('canViewTask', () => {
+  it('shows the task to its assignee', () => {
+    expect(canViewTask(actor(RANU, 'tasks.view'), deliveryTask)).toBe(true)
+  })
+
+  it("shows it to the owner of the client it is delivered for", () => {
+    expect(canViewTask(actor(FAIZAL, 'tasks.view'), deliveryTask)).toBe(true)
+  })
+
+  it('hides it from an unrelated colleague — the bug BRB reported', () => {
+    expect(canViewTask(actor(BYSTANDER, 'tasks.view', 'tasks.edit'), deliveryTask)).toBe(false)
+  })
+
+  it('shows everything to a tasks.manage holder', () => {
+    expect(canViewTask(actor(BYSTANDER, 'tasks.manage'), deliveryTask)).toBe(true)
+  })
+
+  it('shows it to whoever raised it', () => {
+    expect(
+      canViewTask(actor(BYSTANDER, 'tasks.view'), { ...deliveryTask, createdById: BYSTANDER }),
+    ).toBe(true)
+  })
+})
+
+describe('taskVisibilityWhere', () => {
+  it('is unfiltered for a manager', () => {
+    expect(taskVisibilityWhere(actor(BYSTANDER, 'tasks.manage'))).toEqual({})
+  })
+
+  it('restricts everyone else to assigned / created / client-owned', () => {
+    const where = taskVisibilityWhere(actor(RANU, 'tasks.edit')) as {
+      OR: Array<Record<string, unknown>>
+    }
+    expect(where.OR).toEqual([
+      { assignees: { some: { userId: RANU } } },
+      { assigneeId: RANU },
+      { createdById: RANU },
+      { project: { client: { ownerId: RANU } } },
+    ])
   })
 })

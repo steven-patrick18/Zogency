@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { requirePermission, withTenant } from '@/lib/authz'
 import { prisma } from '@/lib/db/prisma'
+import { taskVisibilityWhere } from '@/modules/tasks/task-scope'
 import { EditProjectForm } from './edit-project-form'
 
 const COLUMNS: Array<{ key: string; label: string }> = [
@@ -22,7 +23,13 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       where: { id },
       include: {
         client: { select: { id: true, name: true } },
-        tasks: { include: { assignees: true }, orderBy: { createdAt: 'desc' } },
+        // Same visibility rule as the board — otherwise opening the project
+        // would hand you every task you were not allowed to see on /tasks.
+        tasks: {
+          where: taskVisibilityWhere({ id: session.user.id, permissions: session.user.permissions }),
+          include: { assignees: true },
+          orderBy: { createdAt: 'desc' },
+        },
       },
     })
     if (!project) return null

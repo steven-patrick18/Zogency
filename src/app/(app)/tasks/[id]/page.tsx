@@ -4,7 +4,7 @@ import { requirePermission, withTenant } from '@/lib/authz'
 import { prisma } from '@/lib/db/prisma'
 import { changeTaskStatusAction } from '@/modules/tasks/actions'
 import { Avatar } from '@/components/avatar'
-import { canEditTask, TASK_EDIT_DENIED } from '@/modules/tasks/task-scope'
+import { canEditTask, TASK_EDIT_DENIED, taskVisibilityWhere } from '@/modules/tasks/task-scope'
 import { AttachmentForm } from './attachment-form'
 import { EditTaskForm } from './edit-task-form'
 
@@ -31,8 +31,10 @@ export default async function TaskDetailPage({ params }: { params: Promise<{ id:
   const { id } = await params
 
   const data = await withTenant(async () => {
-    const task = await prisma.task.findUnique({
-      where: { id },
+    // AND-ed with the visibility filter: a task you may not see 404s rather
+    // than rendering, so the id cannot be used to read someone else's work.
+    const task = await prisma.task.findFirst({
+      where: { AND: [{ id }, taskVisibilityWhere({ id: session.user.id, permissions: session.user.permissions })] },
       include: {
         project: { include: { client: { select: { id: true, name: true } } } },
         assignees: true,

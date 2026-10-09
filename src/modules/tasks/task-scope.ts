@@ -59,3 +59,39 @@ export const TASK_EDIT_DENIED =
 
 export const TASK_REASSIGN_DENIED =
   'Only the person who created this task, or someone with the "manage any task" permission, can change who it is assigned to.'
+
+// ── Visibility (BRB, Oct) ───────────────────────────────────────────────────
+// Editing was scoped first; the board still showed every task in the tenant,
+// so a delivery task on Faizal's client, assigned to Ranu, was readable by
+// everyone. Viewing is now scoped too: you see a task if it is yours, you
+// raised it, or you own the client it is being delivered for. Managers
+// (tasks.manage) still see everything.
+//
+// This returns a Prisma filter rather than a predicate so the DATABASE does
+// the filtering — a page that forgets to filter in JS cannot leak rows.
+
+/** Prisma `where` fragment limiting tasks to the ones this actor may read. */
+export function taskVisibilityWhere(actor: TaskActor) {
+  if (canManageAnyTask(actor)) return {} // managers see the whole board
+  return {
+    OR: [
+      { assignees: { some: { userId: actor.id } } }, // assigned to me
+      { assigneeId: actor.id }, // legacy single-assignee column
+      { createdById: actor.id }, // I raised it
+      { project: { client: { ownerId: actor.id } } }, // I own the client
+    ],
+  }
+}
+
+/**
+ * Predicate form, for deciding what to render once rows are already loaded.
+ * MUST agree with taskVisibilityWhere above.
+ */
+export function canViewTask(
+  actor: TaskActor,
+  task: TaskOwnership & { clientOwnerId?: string | null },
+): boolean {
+  if (canManageAnyTask(actor)) return true
+  if (ownsTask(actor, task)) return true
+  return task.clientOwnerId === actor.id
+}

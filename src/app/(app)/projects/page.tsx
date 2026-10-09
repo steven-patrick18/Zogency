@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { requirePermission, withTenant } from '@/lib/authz'
 import { prisma } from '@/lib/db/prisma'
+import { taskVisibilityWhere } from '@/modules/tasks/task-scope'
 import { NewProjectForm } from './new-project-form'
 
 const STATUS_STYLES: Record<string, string> = {
@@ -15,11 +16,17 @@ const STATUS_STYLES: Record<string, string> = {
 export default async function ProjectsPage() {
   const session = await requirePermission('tasks.view')
   const canManage = session.user.permissions.includes('clients.edit')
+  const actor = { id: session.user.id, permissions: session.user.permissions }
 
   const [projects, clients] = await withTenant(() =>
     Promise.all([
       prisma.project.findMany({
-        include: { client: { select: { name: true } }, tasks: { select: { status: true } } },
+        include: {
+          client: { select: { name: true } },
+          // Progress reflects the tasks this person can see, so the bar never
+          // implies work they have no visibility of.
+          tasks: { where: taskVisibilityWhere(actor), select: { status: true } },
+        },
         orderBy: { createdAt: 'desc' },
       }),
       prisma.client.findMany({ where: { archivedAt: null }, select: { id: true, name: true }, orderBy: { name: 'asc' } }),

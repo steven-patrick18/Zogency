@@ -3,7 +3,7 @@ import { requirePermission, withTenant } from '@/lib/authz'
 import { prisma } from '@/lib/db/prisma'
 import { changeTaskStatusAction } from '@/modules/tasks/actions'
 import { Avatar } from '@/components/avatar'
-import { canEditTask } from '@/modules/tasks/task-scope'
+import { canEditTask, taskVisibilityWhere } from '@/modules/tasks/task-scope'
 import { NewTaskForm } from './new-task-form'
 
 const COLUMNS: Array<{ key: 'todo' | 'in_progress' | 'review' | 'done' | 'blocked'; label: string }> = [
@@ -23,7 +23,7 @@ export default async function TasksPage() {
   const actor = { id: session.user.id, permissions: session.user.permissions }
   const [tasks, departments, users, projects, settings] = await withTenant(() =>
     Promise.all([
-      prisma.task.findMany({ include: { project: { include: { client: true } }, assignees: true, _count: { select: { attachments: true } } }, orderBy: { createdAt: 'desc' } }),
+      prisma.task.findMany({ where: taskVisibilityWhere(actor), include: { project: { include: { client: true } }, assignees: true, _count: { select: { attachments: true } } }, orderBy: { createdAt: 'desc' } }),
       prisma.department.findMany({ orderBy: { sort: 'asc' } }),
       prisma.user.findMany({ where: { status: 'active' }, select: { id: true, name: true, avatar: true } }),
       prisma.project.findMany({ where: { status: 'active' }, select: { id: true, name: true } }),

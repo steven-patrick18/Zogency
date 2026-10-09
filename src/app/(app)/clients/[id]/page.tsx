@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import { requirePermission, withTenant } from '@/lib/authz'
 import { prisma } from '@/lib/db/prisma'
 import { toggleOnboardingItemAction } from '@/modules/tasks/actions'
+import { taskVisibilityWhere } from '@/modules/tasks/task-scope'
 import { EditClientForm, EditContactForm } from './edit-forms'
 import { InvitePortalButton } from './invite-button'
 
@@ -17,7 +18,13 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
         contacts: true,
         handovers: true,
         onboardingItems: { orderBy: { dueOn: 'asc' } },
-        projects: { include: { tasks: true } },
+        projects: {
+          include: {
+            tasks: {
+              where: taskVisibilityWhere({ id: session.user.id, permissions: session.user.permissions }),
+            },
+          },
+        },
         invoices: { orderBy: { createdAt: 'desc' } },
       },
     })
