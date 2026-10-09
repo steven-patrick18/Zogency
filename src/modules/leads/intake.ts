@@ -9,6 +9,7 @@ import { prisma, prismaUnscoped, scoped } from '@/lib/db/prisma'
 import { enqueue, registerProcessor } from '@/lib/queue'
 import { getIntegrationConfig } from '@/modules/integrations/service'
 import { extractLeadgenId, fetchMetaLeadFields, hasInlineFieldData } from './meta-graph'
+import { readWebFormFields } from './web-form'
 import { createLead, type LeadInput } from './service'
 
 type IntakeSource = 'website' | 'meta' | 'google'
@@ -114,15 +115,9 @@ async function enrichMetaPayload(raw: unknown): Promise<unknown> {
 export function mapPayload(source: IntakeSource, raw: unknown): LeadInput {
   const r = raw as Record<string, unknown>
   if (source === 'website') {
-    return {
-      name: String(r.name ?? ''),
-      phone: r.phone ? String(r.phone) : null,
-      email: r.email ? String(r.email) : null,
-      company: r.company ? String(r.company) : null,
-      city: r.city ? String(r.city) : null,
-      industry: r.industry ? String(r.industry) : null,
-      sourceName: SOURCE_NAMES.website,
-    }
+    // Alias-aware: a WordPress form posts `your-name` / `Full Name` / split
+    // first+last, not our exact keys.
+    return { ...readWebFormFields(r), sourceName: SOURCE_NAMES.website }
   }
   if (source === 'meta') {
     // Lead detail shape: { field_data: [{ name, values: [v] }] } — present in
